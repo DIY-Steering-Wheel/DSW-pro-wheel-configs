@@ -90,24 +90,32 @@ class SerialBackend:
         with self._lock:
             self._serial.write(payload.encode("utf-8"))
 
-    def request(self, cls: str, cmd: str, instance: int = 0, adr: Optional[int] = None, typechar: str = "?") -> Optional[str]:
+    def request(
+        self,
+        cls: str,
+        cmd: str,
+        instance: int = 0,
+        adr: Optional[int] = None,
+        typechar: str = "?",
+    ) -> Optional[str]:
         if not self.is_connected():
             return None
 
         result = {"value": None}
         evt = threading.Event()
 
+        typechar = typechar or ""
+
         def handler(reply: str) -> None:
             result["value"] = reply
             evt.set()
 
         cb = self._register_callback(cls, cmd, instance, adr, typechar, handler)
-        if typechar == "?":
-            self.send_raw(encode_get(cls, cmd, instance=instance, address=adr))
-        elif typechar == "":
-            self.send_raw(encode_cmd(cls, cmd, instance=instance, address=adr))
+        if adr is None:
+            payload = f"{cls}.{instance}.{cmd}{typechar};"
         else:
-            self.send_raw(encode_get(cls, cmd, instance=instance, address=adr))
+            payload = f"{cls}.{instance}.{cmd}{typechar}{adr};"
+        self.send_raw(payload)
 
         evt.wait(1.5)
         if not evt.is_set() and cb in self._callbacks:
@@ -171,6 +179,106 @@ class SerialBackend:
         except ValueError:
             current = None
         return {"current": current, "classes": classes}
+
+    @staticmethod
+    def _parse_class_list(reply: Optional[str]) -> List[Dict]:
+        if not reply:
+            return []
+        classes = []
+        for line in reply.split("\n"):
+            if not line:
+                continue
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                continue
+            class_id, creatable, name = parts
+            try:
+                class_id = int(class_id)
+            except ValueError:
+                continue
+            classes.append(
+                {
+                    "id": class_id,
+                    "name": name,
+                    "creatable": creatable != "0",
+                }
+            )
+        return classes
+
+    @staticmethod
+    def _parse_shifter_modes(reply: Optional[str]) -> List[Dict]:
+        if not reply:
+            return []
+        modes = []
+        for line in reply.split("\n"):
+            if not line:
+                continue
+            parts = line.split(":", 1)
+            if len(parts) < 2:
+                continue
+            name, meta = parts
+            meta_parts = meta.split(",")
+            if not meta_parts:
+                continue
+            try:
+                mode_id = int(meta_parts[0])
+            except ValueError:
+                continue
+            modes.append({"id": mode_id, "name": name})
+        return modes
+
+    def get_class_definitions(self, axis: int = 0) -> Dict:
+        if not self.is_connected():
+            return {
+                "driver": {"current": None, "classes": []},
+                "encoder": {"current": None, "classes": []},
+                "shifter": {"current": None, "modes": []},
+            }
+
+        driver_list = self.request("axis", "drvtype", instance=axis, typechar="!")
+        driver_current = self.request("axis", "drvtype", instance=axis, typechar="?")
+        encoder_list = self.request("axis", "enctype", instance=axis, typechar="!")
+        encoder_current = self.request("axis", "enctype", instance=axis, typechar="?")
+        shifter_list = self.request("shifter", "mode", instance=0, typechar="!")
+        shifter_current = self.request("shifter", "mode", instance=0, typechar="?")
+
+        def _to_int(value: Optional[str]) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except ValueError:
+                return None
+
+        return {
+            "driver": {
+                "current": _to_int(driver_current),
+                "classes": self._parse_class_list(driver_list),
+            },
+            "encoder": {
+                "current": _to_int(encoder_current),
+                "classes": self._parse_class_list(encoder_list),
+            },
+            "shifter": {
+                "current": _to_int(shifter_current),
+                "modes": self._parse_shifter_modes(shifter_list),
+            },
+        }
+
+    def apply_class_definitions(self, payload: Dict, axis: int = 0) -> bool:
+        if not self.is_connected():
+            return False
+        driver_id = payload.get("driver")
+        encoder_id = payload.get("encoder")
+        shifter_mode = payload.get("shifter")
+
+        if driver_id is not None:
+            self.send_value("axis", "drvtype", value=int(driver_id), instance=axis)
+        if encoder_id is not None:
+            self.send_value("axis", "enctype", value=int(encoder_id), instance=axis)
+        if shifter_mode is not None:
+            self.send_value("shifter", "mode", value=int(shifter_mode), instance=0)
+        return True
 
     def set_main_class(self, class_id: int) -> bool:
         if not self.is_connected():

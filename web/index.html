@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DSW Pro Wheel Configurator</title>
     <link rel="stylesheet" href="../bootstrap-5.3.0-dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="../bootstrap-icons-1.13.1/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css" />
     <link rel="stylesheet" href="css/theme.css" />
   </head>
   <body class="theme-blue">
@@ -55,15 +55,7 @@
             <span>Painel</span>
           </div>
           <div class="topbar-spacer"></div>
-          <div class="topbar-actions">
-            <button id="refreshAll" class="btn-icon" title="Atualizar">
-              <i class="bi bi-arrow-clockwise"></i>
-            </button>
-            <button id="openProfilesBtn" class="btn-primary-sm" title="Gerenciar Perfis">
-              <i class="bi bi-collection"></i>
-              Perfis
-            </button>
-          </div>
+          <div class="topbar-actions"></div>
         </header>
 
         <!-- CONTEÚDO PRINCIPAL -->
@@ -145,6 +137,10 @@
             <div class="section-title">
               <span>Classes Disponíveis</span>
               <span class="badge-count" id="classCount">0</span>
+              <button id="sendClassDefs" class="btn-outline btn-classes-send" title="Enviar definicao de classes">
+                <i class="bi bi-send"></i>
+                Enviar definicao de classes
+              </button>
             </div>
             <div id="classList" class="classes-grid"></div>
           </section>
@@ -156,10 +152,23 @@
             <span class="footer-status" id="saveStatus">Pronto</span>
             <span class="footer-hint" id="footerConnection">Nenhum dispositivo</span>
           </div>
-          <div class="footer-center">
+
+          <div class="footer-action-buttons">
+            <button id="openProfilesBtn" class="hw-btn" title="Gerenciar Perfis">
+              <i class="bi bi-collection"></i>
+              Perfis
+            </button>
+            <button id="openTerminalBtn" class="hw-btn" title="Abrir Console">
+              <i class="bi bi-terminal"></i>
+              Terminal
+            </button>
+            <button id="openErrorsBtn" class="hw-btn" title="Erros e Warnings">
+              <i class="bi bi-exclamation-circle"></i>
+              Erros
+            </button>
             <button id="sidebarSaveFlash" class="hw-btn hw-save" title="Salvar na Flash">
               <i class="bi bi-save2"></i>
-              Salvar
+              Save to flash
             </button>
             <button id="sidebarReboot" class="hw-btn hw-reboot" title="Reiniciar">
               <i class="bi bi-arrow-clockwise"></i>
@@ -170,88 +179,7 @@
               Formatar
             </button>
           </div>
-          <div class="footer-right">
-            <span class="footer-info">DSW Pro v1.0</span>
-          </div>
         </footer>
-      </div>
-    </div>
-
-    <!-- Modal de Perfis (Oculto por padrão) -->
-    <div id="profilesModal" class="modal fade" tabindex="-1" style="display: none;">
-      <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-collection"></i>
-              Gerenciar Perfis
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body">
-            <div class="modal-section">
-              <label class="section-label">Perfil Ativo</label>
-              <div class="selector-row">
-                <select id="profileSelectModal" class="form-select-custom"></select>
-                <button id="profileSelectApply" class="btn-outline" title="Selecionar">
-                  <i class="bi bi-check2-circle"></i>
-                </button>
-              </div>
-            </div>
-
-            <div class="modal-divider"></div>
-
-            <div class="modal-section">
-              <label class="section-label">Ações</label>
-              <div class="btn-grid-2">
-                <button id="profileSave" class="btn-outline" title="Salvar do hardware">
-                  <i class="bi bi-download"></i>
-                  Salvar Hardware
-                </button>
-                <button id="profileApply" class="btn-outline" title="Aplicar ao hardware">
-                  <i class="bi bi-check2-circle"></i>
-                  Aplicar
-                </button>
-              </div>
-            </div>
-
-            <div class="modal-divider"></div>
-
-            <div class="modal-section">
-              <label class="section-label">Gerenciamento</label>
-              <div class="btn-grid-3">
-                <button id="profileCreate" class="btn-success" title="Novo">
-                  <i class="bi bi-plus-circle"></i>
-                  Novo
-                </button>
-                <button id="profileRename" class="btn-info" title="Renomear">
-                  <i class="bi bi-pencil"></i>
-                  Renomear
-                </button>
-                <button id="profileDelete" class="btn-danger" title="Excluir">
-                  <i class="bi bi-trash"></i>
-                  Excluir
-                </button>
-              </div>
-            </div>
-
-            <div class="modal-divider"></div>
-
-            <div class="modal-section">
-              <label class="section-label">Importar / Exportar</label>
-              <div class="btn-grid-2">
-                <button id="profileExport" class="btn-ghost" title="Exportar">
-                  <i class="bi bi-box-arrow-up-right"></i>
-                  Exportar
-                </button>
-                <button id="profileImport" class="btn-ghost" title="Importar">
-                  <i class="bi bi-box-arrow-in-down"></i>
-                  Importar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 

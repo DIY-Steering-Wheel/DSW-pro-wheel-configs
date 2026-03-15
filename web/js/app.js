@@ -3,7 +3,14 @@ let selectedProfile = null;
 let mainClassData = { current: null, classes: [] };
 let classCatalog = [];
 let activeClassIds = new Set();
+let classDefinitions = {
+  driver: { current: null, classes: [] },
+  encoder: { current: null, classes: [] },
+  shifter: { current: null, modes: [] },
+};
 let lastStatus = null;
+let terminalLog = [];
+let errorsList = [];
 
 const fallbackMenu = [
   { key: "dashboard", label: "Painel", icon: "bi-grid-1x2" },
@@ -33,7 +40,7 @@ function updateFooterConnection(status) {
   const footer = document.getElementById("footerConnection");
   if (!footer) return;
   if (status?.connected) {
-    footer.textContent = `Porta: ${status.port} | ${status.supported ? "Compativel" : "Nao compativel"}`;
+    footer.textContent = `Porta: ${status.port}`;
   } else {
     footer.textContent = "Nenhum dispositivo conectado";
   }
@@ -84,54 +91,78 @@ function renderClasses() {
   const container = document.getElementById("classList");
   const countEl = document.getElementById("classCount");
   if (!container) return;
-  
+
   container.innerHTML = "";
-  if (!classCatalog || classCatalog.length === 0) {
-    container.innerHTML = `<div style="grid-column: 1/-1; padding: 24px; text-align: center; color: var(--text-muted);">Nenhuma classe disponível</div>`;
-    if (countEl) countEl.textContent = "0";
-    return;
-  }
-  
-  if (countEl) countEl.textContent = classCatalog.length;
-  
-  classCatalog.forEach((entry) => {
-    const isActive = activeClassIds.has(entry.id);
+
+  const definitions = [
+    {
+      key: "driver",
+      label: "Driver de Force Feedback",
+      icon: "bi-speedometer2",
+      description: "Seleciona o driver principal do force feedback.",
+    },
+    {
+      key: "encoder",
+      label: "Classe do Encoder",
+      icon: "bi-disc",
+      description: "Seleciona o encoder usado no eixo principal.",
+    },
+    {
+      key: "shifter",
+      label: "H-Shifter",
+      icon: "bi-joystick",
+      description: "Seleciona o modo do H-shifter.",
+    },
+  ];
+
+  if (countEl) countEl.textContent = String(definitions.length);
+
+  definitions.forEach((definition) => {
+    const data = classDefinitions?.[definition.key] || {};
+    const options = definition.key === "shifter" ? data.modes || [] : data.classes || [];
+    const selected = data.current ?? "";
+    const isDisabled = !lastStatus?.connected || options.length === 0;
+
     const item = document.createElement("div");
-    item.className = "class-item";
-    const checkboxId = `class-check-${entry.id}`;
-    
+    item.className = "class-item class-definition";
+    const optionLabel = (entry) => entry.name || entry.label || `Classe ${entry.id}`;
+    const optionValues = options
+      .map((entry) => {
+        const disabled = entry.creatable === false && entry.id !== selected ? "disabled" : "";
+        return `<option value="${entry.id}" ${disabled}>${optionLabel(entry)}</option>`;
+      })
+      .join("");
+    const emptyOption = `<option value="">Nenhuma</option>`;
+
     item.innerHTML = `
       <div class="class-name">
-        <i class="bi ${entry.icon}"></i>
-        <span>${entry.label}</span>
+        <i class="bi ${definition.icon}"></i>
+        <span>${definition.label}</span>
       </div>
-      <div class="class-desc">${entry.description}</div>
-      <div class="class-toggle">
-        <small style="color: var(--text-muted); font-size: 11px;">${isActive ? "Ativa" : "Inativa"}</small>
-        <input type="checkbox" id="${checkboxId}" ${isActive ? "checked" : ""} ${lastStatus?.connected ? "" : "disabled"}>
+      <div class="class-desc">${definition.description}</div>
+      <div class="class-select">
+        <select class="form-select-sm class-definition-select" data-definition="${definition.key}" ${
+          isDisabled ? "disabled" : ""
+        }>
+          ${emptyOption}
+          ${optionValues}
+        </select>
       </div>
     `;
-    
-    const checkbox = item.querySelector(`#${checkboxId}`);
-    if (checkbox) {
-      checkbox.addEventListener("change", async (event) => {
-        const enabled = event.target.checked;
-        if (!window.pywebview?.api || !lastStatus?.connected) {
-          event.target.checked = !enabled;
-          return;
-        }
-        const result = await window.pywebview.api.set_class_active(entry.id, enabled);
-        if (!result?.ok) {
-          event.target.checked = !enabled;
-          setSaveStatus("Falha ao alterar classe. Verifique o firmware.");
-          return;
-        }
-        await loadActiveClasses();
-        setSaveStatus("Classe atualizada com sucesso.");
+
+    container.appendChild(item);
+
+    const select = item.querySelector("select");
+    if (select) {
+      select.value = selected !== null && selected !== undefined ? String(selected) : "";
+      select.addEventListener("change", () => {
+        const value = parseInt(select.value, 10);
+        classDefinitions[definition.key] = {
+          ...data,
+          current: Number.isNaN(value) ? null : value,
+        };
       });
     }
-    
-    container.appendChild(item);
   });
 }
 
@@ -160,7 +191,17 @@ function renderPorts(ports) {
 
 function renderProfiles(data) {
   const select = document.getElementById("profileSelectModal");
-  if (!select) return;
+  
+  // Se o modal ainda não existe, só guardar os dados
+  if (!select) {
+    const profiles = data?.profiles || [];
+    const current = data?.current;
+    if (!profiles.includes(selectedProfile)) {
+      selectedProfile = current || profiles[0] || "None";
+    }
+    return;
+  }
+  
   select.innerHTML = "";
   const profiles = data?.profiles || [];
   const current = data?.current;
@@ -203,9 +244,23 @@ function updateStatus(status) {
   updateFooterConnection(status);
   setText("fwValue", status?.fw || "--");
   setText("hwValue", status?.hw || "--");
-  setText("ramValue", status?.heapfree || "--");
+  
+  // Parse RAM value from "max:current" format
+  if (status?.heapfree) {
+    const values = status.heapfree.split(":");
+    if (values.length === 2) {
+      const max = parseInt(values[0]) / 1000;
+      const current = parseInt(values[1]) / 1000;
+      setText("ramValue", `${max.toFixed(1)}k (${current.toFixed(1)}k min)`);
+    } else {
+      setText("ramValue", status.heapfree);
+    }
+  } else {
+    setText("ramValue", "--");
+  }
+  
   setText("tempValue", status?.temp ? `${status.temp} °C` : "--");
-  setText("connValue", connected ? (status.supported ? "Compativel" : "Nao compativel") : "--");
+  setText("connValue", connected ? "Conectado" : "--");
 }
 
 function renderMainClasses(data) {
@@ -251,6 +306,7 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
   modalEl.className = "modal fade";
   modalEl.tabIndex = -1;
   modalEl.id = `confirm-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
@@ -282,6 +338,270 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
+  modal.show();
+}
+
+function showProfilesModal() {
+  // Remove existing modals
+  document.querySelectorAll(".modal.fade").forEach((m) => {
+    if (m.id !== "profilesModal" && bootstrap.Modal.getInstance(m)) {
+      bootstrap.Modal.getInstance(m).hide();
+      setTimeout(() => m.remove(), 300);
+    }
+  });
+
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `profiles-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+  
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-collection"></i>
+            Gerenciar Perfis
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <label class="section-label">Perfil Ativo</label>
+            <div class="selector-row">
+              <select class="form-select-custom profiles-select"></select>
+              <button class="btn-outline profiles-apply" title="Selecionar">
+                <i class="bi bi-check2-circle"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-divider"></div>
+
+          <div class="modal-section">
+            <label class="section-label">Ações</label>
+            <div class="btn-grid-2">
+              <button class="btn-outline profiles-save" title="Salvar do hardware">
+                <i class="bi bi-download"></i>
+                Salvar Hardware
+              </button>
+              <button class="btn-outline profiles-apply-to-board" title="Aplicar ao hardware">
+                <i class="bi bi-check2-circle"></i>
+                Aplicar
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-divider"></div>
+
+          <div class="modal-section">
+            <label class="section-label">Gerenciamento</label>
+            <div class="btn-grid-3">
+              <button class="btn-success profiles-create" title="Novo">
+                <i class="bi bi-plus-circle"></i>
+                Novo
+              </button>
+              <button class="btn-info profiles-rename" title="Renomear">
+                <i class="bi bi-pencil"></i>
+                Renomear
+              </button>
+              <button class="btn-danger profiles-delete" title="Excluir">
+                <i class="bi bi-trash"></i>
+                Excluir
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-divider"></div>
+
+          <div class="modal-section">
+            <label class="section-label">Importar / Exportar</label>
+            <div class="btn-grid-2">
+              <button class="btn-ghost profiles-export" title="Exportar">
+                <i class="bi bi-box-arrow-up-right"></i>
+                Exportar
+              </button>
+              <button class="btn-ghost profiles-import" title="Importar">
+                <i class="bi bi-box-arrow-in-down"></i>
+                Importar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = new bootstrap.Modal(modalEl);
+
+  // Atualizar select
+  const select = modalEl.querySelector(".profiles-select");
+  const profiles = classCatalog ? classCatalog.map((c) => c.label) : [];
+  select.innerHTML = profiles.map((name) => 
+    `<option value="${name}" ${name === selectedProfile ? "selected" : ""}>${name}</option>`
+  ).join("");
+
+  // Event listeners
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".profiles-apply").addEventListener("click", async () => {
+    selectedProfile = select.value;
+    if (window.pywebview?.api) {
+      await window.pywebview.api.select_profile(selectedProfile);
+    }
+  });
+
+  modalEl.querySelector(".profiles-save").addEventListener("click", () => saveProfile());
+  modalEl.querySelector(".profiles-apply-to-board").addEventListener("click", () => applyProfile());
+  modalEl.querySelector(".profiles-create").addEventListener("click", () => createProfile());
+  modalEl.querySelector(".profiles-rename").addEventListener("click", () => renameProfile());
+  modalEl.querySelector(".profiles-delete").addEventListener("click", () => deleteProfile());
+  modalEl.querySelector(".profiles-export").addEventListener("click", () => exportProfile());
+  modalEl.querySelector(".profiles-import").addEventListener("click", () => importProfile());
+
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  modal.show();
+}
+
+function showTerminalModal() {
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `terminal-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-terminal"></i>
+            Console Serial
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="terminal-output"></div>
+          <div class="terminal-input-group">
+            <input type="text" class="terminal-input" placeholder="Digite comando..." autocomplete="off">
+            <button class="btn-primary-sm terminal-send" title="Enviar">
+              <i class="bi bi-send"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = new bootstrap.Modal(modalEl);
+
+  // Atualizar display
+  const output = modalEl.querySelector(".terminal-output");
+  output.innerHTML = terminalLog.map((entry) => {
+    const color = entry.isError ? "color: #ff7b7b;" : "color: #53ffba;";
+    return `<div style="${color}">[${entry.timestamp}] ${entry.message}</div>`;
+  }).join("");
+  output.scrollTop = output.scrollHeight;
+
+  const input = modalEl.querySelector(".terminal-input");
+  const sendBtn = modalEl.querySelector(".terminal-send");
+
+  sendBtn.addEventListener("click", async () => {
+    if (!input.value) return;
+    const cmd = input.value;
+    addTerminalLog(`> ${cmd}`);
+    input.value = "";
+    output.innerHTML = terminalLog.map((entry) => {
+      const color = entry.isError ? "color: #ff7b7b;" : "color: #53ffba;";
+      return `<div style="${color}">[${entry.timestamp}] ${entry.message}</div>`;
+    }).join("");
+    output.scrollTop = output.scrollHeight;
+    if (window.pywebview?.api) {
+      try {
+        const result = await window.pywebview.api.send_serial_command(cmd);
+        if (result) {
+          addTerminalLog(result);
+          output.innerHTML = terminalLog.map((entry) => {
+            const color = entry.isError ? "color: #ff7b7b;" : "color: #53ffba;";
+            return `<div style="${color}">[${entry.timestamp}] ${entry.message}</div>`;
+          }).join("");
+          output.scrollTop = output.scrollHeight;
+        }
+      } catch (err) {
+        addTerminalLog(`Erro: ${err.message}`, true);
+      }
+    }
+  });
+
+  input.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") sendBtn.click();
+  });
+
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  modal.show();
+}
+
+function showErrorsModal() {
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `errors-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-exclamation-circle"></i>
+            Erros e Avisos
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="errors-list"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-outline errors-clear" title="Limpar">
+            <i class="bi bi-trash"></i>
+            Limpar
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = new bootstrap.Modal(modalEl);
+
+  const list = modalEl.querySelector(".errors-list");
+  list.innerHTML = errorsList.map((error) => `
+    <div class="error-item ${error.level}">
+      <div class="error-item-title">${error.title}</div>
+      <div class="error-item-message">${error.message}</div>
+      <div class="error-item-time">${error.timestamp}</div>
+    </div>
+  `).join("");
+
+  modalEl.querySelector(".errors-clear").addEventListener("click", () => {
+    errorsList = [];
+    list.innerHTML = "";
+  });
+
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
   modal.show();
 }
 
@@ -322,6 +642,25 @@ async function loadCatalog() {
   classCatalog = schema?.classes || [];
 }
 
+async function loadClassDefinitions() {
+  if (!window.pywebview?.api || !lastStatus?.connected) {
+    classDefinitions = {
+      driver: { current: null, classes: [] },
+      encoder: { current: null, classes: [] },
+      shifter: { current: null, modes: [] },
+    };
+    renderClasses();
+    return;
+  }
+  const data = await window.pywebview.api.get_class_definitions();
+  classDefinitions = {
+    driver: data?.driver || { current: null, classes: [] },
+    encoder: data?.encoder || { current: null, classes: [] },
+    shifter: data?.shifter || { current: null, modes: [] },
+  };
+  renderClasses();
+}
+
 async function loadActiveClasses() {
   activeClassIds = new Set();
   if (!window.pywebview?.api || !lastStatus?.connected) {
@@ -347,6 +686,13 @@ async function connectSelected() {
   if (!selectedPort || !window.pywebview?.api) return;
   const result = await window.pywebview.api.connect(selectedPort);
   updateStatus(result.status);
+  if (!result?.ok) {
+    setSaveStatus("Falha ao conectar.");
+    return;
+  }
+  await loadCatalog();
+  await loadProfiles();
+  await loadClassDefinitions();
   await loadActiveClasses();
   await loadMainClasses();
 }
@@ -356,6 +702,11 @@ async function disconnectCurrent() {
   const result = await window.pywebview.api.disconnect();
   updateStatus(result.status);
   activeClassIds = new Set();
+  classDefinitions = {
+    driver: { current: null, classes: [] },
+    encoder: { current: null, classes: [] },
+    shifter: { current: null, modes: [] },
+  };
   renderClasses();
   renderMainClasses({ current: null, classes: [] });
 }
@@ -424,18 +775,87 @@ async function importProfile() {
   }
 }
 
+async function applyClassDefinitions() {
+  if (!window.pywebview?.api || !lastStatus?.connected) return;
+  const payload = {
+    driver: classDefinitions?.driver?.current ?? null,
+    encoder: classDefinitions?.encoder?.current ?? null,
+    shifter: classDefinitions?.shifter?.current ?? null,
+  };
+  const result = await window.pywebview.api.apply_class_definitions(payload);
+  if (result?.ok) {
+    setSaveStatus("Definicoes de classes enviadas.");
+    await loadClassDefinitions();
+    await loadActiveClasses();
+    return;
+  }
+  setSaveStatus("Falha ao enviar definicoes de classes.");
+}
+
+function addTerminalLog(message, isError = false) {
+  const timestamp = new Date().toLocaleTimeString();
+  terminalLog.push({ message, timestamp, isError });
+  updateTerminalDisplay();
+}
+
+function updateTerminalDisplay() {
+  const output = document.getElementById("terminalOutput");
+  if (!output) return;
+  output.innerHTML = terminalLog.map((entry) => {
+    const color = entry.isError ? "color: #ff7b7b;" : "color: #53ffba;";
+    return `<div style="${color}">[${entry.timestamp}] ${entry.message}</div>`;
+  }).join("");
+  output.scrollTop = output.scrollHeight;
+}
+
+function addError(title, message, level = "error") {
+  const timestamp = new Date().toLocaleTimeString();
+  errorsList.push({ title, message, level, timestamp });
+  updateErrorsDisplay();
+}
+
+function updateErrorsDisplay() {
+  const list = document.getElementById("errorsList");
+  if (!list) return;
+  list.innerHTML = errorsList.map((error, index) => `
+    <div class="error-item ${error.level}">
+      <div class="error-item-title">${error.title}</div>
+      <div class="error-item-message">${error.message}</div>
+      <div class="error-item-time">${error.timestamp}</div>
+    </div>
+  `).join("");
+}
+
 function openProfilesModal() {
   const modal = new bootstrap.Modal(document.getElementById("profilesModal"));
   modal.show();
 }
 
 async function refreshAll() {
-  await loadPorts();
-  await loadProfiles();
-  await loadStatus();
-  await loadCatalog();
-  await loadActiveClasses();
-  await loadMainClasses();
+  // Show loading indicator
+  const statusEl = document.getElementById("saveStatus");
+  const originalText = statusEl?.textContent;
+  setSaveStatus("Carregando... 1");
+  
+  try {
+    await loadPorts();
+    setSaveStatus("Carregando... 2");
+    await loadProfiles();
+    setSaveStatus("Carregando... 3");
+    await loadStatus();
+    setSaveStatus("Carregando... 4");
+    await loadCatalog();
+    setSaveStatus("Carregando... 5");
+    await loadClassDefinitions();
+    setSaveStatus("Carregando... 6");
+    await loadActiveClasses();
+    setSaveStatus("Carregando... 7");
+    await loadMainClasses();
+    setSaveStatus("Pronto");
+  } catch (err) {
+    setSaveStatus("Erro ao carregar");
+    addError("Erro ao Carregar", err.message, "error");
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -445,38 +865,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("refreshPorts")?.addEventListener("click", loadPorts);
   document.getElementById("connectBtn")?.addEventListener("click", connectSelected);
   document.getElementById("disconnectBtn")?.addEventListener("click", disconnectCurrent);
-  document.getElementById("refreshAll")?.addEventListener("click", refreshAll);
 
   // Profile modal
-  document.getElementById("openProfilesBtn")?.addEventListener("click", openProfilesModal);
+  document.getElementById("openProfilesBtn")?.addEventListener("click", showProfilesModal);
 
-  // Profile actions from modal
-  document.getElementById("profileSelectApply")?.addEventListener("click", async () => {
-    const select = document.getElementById("profileSelectModal");
-    if (select && window.pywebview?.api) {
-      const name = select.value;
-      selectedProfile = name;
-      await window.pywebview.api.select_profile(name);
-    }
+  // Terminal and Errors modals
+  document.getElementById("openTerminalBtn")?.addEventListener("click", showTerminalModal);
+
+  document.getElementById("openErrorsBtn")?.addEventListener("click", showErrorsModal);
+
+  document.getElementById("sendClassDefs")?.addEventListener("click", () => {
+    if (!lastStatus?.connected) return;
+    showConfirmModal({
+      title: "Enviar definicao de classes",
+      body: "Deseja enviar as definicoes selecionadas para o hardware?",
+      confirmText: "Enviar",
+      confirmIcon: "bi-send",
+      onConfirm: async () => {
+        await applyClassDefinitions();
+      },
+    });
   });
 
-  document.getElementById("profileApply")?.addEventListener("click", applyProfile);
-  document.getElementById("profileSave")?.addEventListener("click", saveProfile);
-  document.getElementById("profileCreate")?.addEventListener("click", createProfile);
-  document.getElementById("profileRename")?.addEventListener("click", renameProfile);
-  document.getElementById("profileDelete")?.addEventListener("click", deleteProfile);
-  document.getElementById("profileExport")?.addEventListener("click", exportProfile);
-  document.getElementById("profileImport")?.addEventListener("click", importProfile);
-
-  document.getElementById("profileSelectModal")?.addEventListener("change", async (event) => {
-    const name = event.target.value;
-    selectedProfile = name;
-    if (window.pywebview?.api) {
-      await window.pywebview.api.select_profile(name);
-    }
-  });
-
-  // Hardware actions from sidebar
+  // Hardware actions from footer
   document.getElementById("sidebarSaveFlash")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;
     showConfirmModal({

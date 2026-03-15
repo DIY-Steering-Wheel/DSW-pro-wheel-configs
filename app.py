@@ -53,6 +53,12 @@ class Api:
     def get_main_classes(self) -> Dict:
         return self._serial.get_main_classes()
 
+    def get_class_definitions(self) -> Dict:
+        return self._serial.get_class_definitions()
+
+    def apply_class_definitions(self, payload: Dict) -> Dict:
+        return {"ok": self._serial.apply_class_definitions(payload)}
+
     def set_main_class(self, class_id: int) -> Dict:
         return {"ok": self._serial.set_main_class(class_id)}
 
@@ -64,6 +70,27 @@ class Api:
 
     def save_to_flash(self) -> Dict:
         return {"ok": self._serial.save_to_flash()}
+
+    def send_serial_command(self, command: str) -> str:
+        """Envia um comando serial raw e retorna a resposta"""
+        if not self._serial.is_connected():
+            return "Erro: Nenhum dispositivo conectado"
+        try:
+            # Tenta parseiar como "classe comando" ou "classe comando instancia"
+            parts = command.strip().split()
+            if len(parts) < 2:
+                return f"Erro: Formato inválido. Use: classe comando [instancia]"
+            
+            cls = parts[0]
+            cmd = parts[1]
+            instance = int(parts[2]) if len(parts) > 2 else 0
+            
+            result = self._serial.request(cls, cmd, instance=instance)
+            return result if result is not None else "Sem resposta"
+        except ValueError as e:
+            return f"Erro: {str(e)}"
+        except Exception as e:
+            return f"Erro: {str(e)}"
 
     def get_profiles(self) -> Dict:
         return {

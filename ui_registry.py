@@ -168,6 +168,7 @@ def build_tabs_from_lsactive(reply: str) -> List[Dict]:
         )
         tabs.append(
             {
+                "id": item["id"],
                 "key": f"{item['clsname']}:{item['unique']}",
                 "title": f"{item['name']}{axis_hint}",
                 "label": info.label,
