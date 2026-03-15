@@ -16,6 +16,7 @@ let lastStatus = null;
 let terminalLog = [];
 let errorsList = [];
 let profilesCache = { profiles: [], current: "None" };
+let autoConnectAttempted = false;
 
 const fallbackMenu = [
   { key: "dashboard", label: "Painel", icon: "bi-grid-1x2" },
@@ -651,6 +652,9 @@ function updateMonitoringLock(connected) {
     startMonitoringPolling();
   }
   
+  // Re-render adjacent configs since they may now be visible/invisible
+  renderCalibrationTree();
+  
   // Update hardware buttons state
   updateHardwareButtonsState(connected);
 }
@@ -959,6 +963,85 @@ function showToolsModal() {
   modalEl.style.display = "flex";
 }
 
+
+function showRenameProfileModal(currentName, onConfirm) {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `rename-profile-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1070";
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-pencil-square"></i>
+            Renomear Perfil
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <label class="section-label">Perfil atual</label>
+            <div class="profiles-active">${currentName || "--"}</div>
+          </div>
+          <div class="modal-divider"></div>
+          <div class="modal-section">
+            <label class="section-label">Novo nome</label>
+            <input class="profiles-input rename-modal-input" placeholder="Novo nome..." />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-outline modal-cancel" type="button">Cancelar</button>
+          <button class="btn-primary modal-confirm" type="button">
+            <i class="bi bi-check2-circle"></i>
+            Renomear
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
+  const input = modalEl.querySelector(".rename-modal-input");
+  input?.focus();
+
+  modalEl.querySelector(".modal-cancel").addEventListener("click", () => {
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
+  });
+
+  modalEl.querySelector(".modal-confirm").addEventListener("click", () => {
+    const value = input?.value?.trim();
+    if (value && onConfirm) {
+      onConfirm(value);
+    }
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
+  });
+
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    });
+  });
+
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
+}
+
 function showProfilesModal() {
   const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
   document.querySelectorAll(".modal.fade").forEach((m) => {
@@ -995,13 +1078,6 @@ function showProfilesModal() {
                 <button class="btn-success profiles-create" title="Criar">
                   <i class="bi bi-plus-circle"></i>
                   Criar
-                </button>
-              </div>
-              <div class="profiles-actions-row">
-                <input class="profiles-input profiles-rename-name" placeholder="Renomear para..." />
-                <button class="btn-info profiles-rename" title="Renomear">
-                  <i class="bi bi-pencil"></i>
-                  Renomear
                 </button>
               </div>
             </div>
@@ -1071,12 +1147,33 @@ function showProfilesModal() {
     }
     listEl.innerHTML = profiles.map((name) => {
       const active = name === selectedProfile ? "active" : "";
-      return `<div class="profiles-item ${active}" data-name="${name}">${name}</div>`;
+      const disabled = name === "None" || name === "Flash profile" ? "disabled" : "";
+      return `
+        <div class="profiles-item ${active}" data-name="${name}">
+          <span>${name}</span>
+          <button class="profiles-rename-icon ${disabled}" title="Renomear" data-name="${name}">
+            <i class="bi bi-map"></i>
+          </button>
+        </div>
+      `;
     }).join("");
     listEl.querySelectorAll(".profiles-item").forEach((item) => {
       item.addEventListener("click", () => {
         selectedProfile = item.dataset.name;
         buildList();
+      });
+    });
+    listEl.querySelectorAll(".profiles-rename-icon").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const name = btn.dataset.name;
+        if (!name || name === "None" || name === "Flash profile") return;
+        showRenameProfileModal(name, async (newName) => {
+          selectedProfile = name;
+          await renameProfileWithName(newName);
+          await loadProfiles();
+          buildList();
+        });
       });
     });
     activeLabel.textContent = profilesCache?.current || "None";
@@ -1094,15 +1191,6 @@ function showProfilesModal() {
     buildList();
   });
 
-  modalEl.querySelector(".profiles-rename").addEventListener("click", async () => {
-    const input = modalEl.querySelector(".profiles-rename-name");
-    const name = input.value.trim();
-    if (!name) return;
-    await renameProfileWithName(name);
-    input.value = "";
-    await loadProfiles();
-    buildList();
-  });
 
   modalEl.querySelector(".profiles-activate").addEventListener("click", async () => {
     if (!selectedProfile || !window.pywebview?.api) return;
@@ -1125,6 +1213,164 @@ function showProfilesModal() {
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
+
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
+}
+
+function showFirmwareModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `firmware-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-usb-plug"></i>
+            Firmware Update
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="firmware-layout">
+            <div class="firmware-panel">
+              <div class="section-label">Controle</div>
+              <div class="firmware-status">DFU: <span class="firmware-dfu-state">Procurando...</span></div>
+              <div class="firmware-file">Arquivo: <span class="firmware-file-name">--</span></div>
+              <label class="firmware-option">
+                <input type="checkbox" class="firmware-mass-erase" />
+                Full erase (apaga tudo)
+              </label>
+              <div class="btn-grid-1">
+                <button class="btn-outline firmware-enter">
+                  <i class="bi bi-arrow-repeat"></i>
+                  Entrar em DFU
+                </button>
+                <button class="btn-outline firmware-select">
+                  <i class="bi bi-folder2-open"></i>
+                  Selecionar arquivo
+                </button>
+                <button class="btn-primary firmware-upload">
+                  <i class="bi bi-upload"></i>
+                  Enviar firmware
+                </button>
+                <button class="btn-danger firmware-erase">
+                  <i class="bi bi-exclamation-triangle"></i>
+                  Full erase
+                </button>
+              </div>
+            </div>
+            <div class="firmware-panel">
+              <div class="section-label">Progresso</div>
+              <div class="firmware-progress">
+                <div class="firmware-progress-bar"></div>
+              </div>
+              <div class="firmware-progress-text">0%</div>
+              <div class="section-label" style="margin-top: 10px;">Logs</div>
+              <div class="firmware-log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
+
+  const fileNameEl = modalEl.querySelector(".firmware-file-name");
+  const dfuStateEl = modalEl.querySelector(".firmware-dfu-state");
+  const logEl = modalEl.querySelector(".firmware-log");
+  const progressBar = modalEl.querySelector(".firmware-progress-bar");
+  const progressText = modalEl.querySelector(".firmware-progress-text");
+  const massErase = modalEl.querySelector(".firmware-mass-erase");
+  const enterBtn = modalEl.querySelector(".firmware-enter");
+  const selectBtn = modalEl.querySelector(".firmware-select");
+  const uploadBtn = modalEl.querySelector(".firmware-upload");
+  const eraseBtn = modalEl.querySelector(".firmware-erase");
+  if (selectBtn) selectBtn.disabled = true;
+  if (uploadBtn) uploadBtn.disabled = true;
+  if (eraseBtn) eraseBtn.disabled = true;
+
+  const renderStatus = (data) => {
+    if (!data) return;
+    const dfuCount = Number(data.dfu_count || 0);
+    const dfuOk = data.dfu_ok !== false;
+    if (dfuStateEl) {
+      if (!dfuOk && data.dfu_error) {
+        dfuStateEl.textContent = "Erro DFU";
+      } else if (dfuCount === 0) {
+        dfuStateEl.textContent = "Nenhum dispositivo";
+      } else if (dfuCount === 1) {
+        dfuStateEl.textContent = "Dispositivo OK";
+      } else {
+        dfuStateEl.textContent = `Multiplos (${dfuCount})`;
+      }
+    }
+    fileNameEl.textContent = data.selected || "--";
+    const progress = Math.max(0, Math.min(100, data.progress || 0));
+    progressBar.style.width = `${progress}%`;
+    progressText.textContent = `${progress}%`;
+    const logs = data.log || [];
+    logEl.innerHTML = logs.map((line) => `<div class="log-line log-info">${line}</div>`).join("");
+
+    const hasDevice = dfuCount >= 1 && dfuOk;
+    if (selectBtn) selectBtn.disabled = !hasDevice;
+    if (uploadBtn) uploadBtn.disabled = !hasDevice || !data.selected || data.busy;
+    if (eraseBtn) eraseBtn.disabled = !hasDevice || data.busy;
+    if (enterBtn) enterBtn.disabled = !lastStatus?.connected || data.busy;
+  };
+
+  const refreshStatus = async () => {
+    if (!window.pywebview?.api) return;
+    const data = await window.pywebview.api.dfu_status();
+    renderStatus(data);
+  };
+
+  modalEl.querySelector(".firmware-enter").addEventListener("click", async () => {
+    await window.pywebview?.api?.dfu_enter();
+    await refreshStatus();
+  });
+
+  modalEl.querySelector(".firmware-select").addEventListener("click", async () => {
+    await window.pywebview?.api?.dfu_select_file();
+    await refreshStatus();
+  });
+
+  modalEl.querySelector(".firmware-upload").addEventListener("click", async () => {
+    const useErase = Boolean(massErase?.checked);
+    await window.pywebview?.api?.dfu_upload(useErase);
+    await refreshStatus();
+  });
+
+  modalEl.querySelector(".firmware-erase").addEventListener("click", async () => {
+    await window.pywebview?.api?.dfu_mass_erase();
+    await refreshStatus();
+  });
+
+  let statusTimer = setInterval(refreshStatus, 1200);
+
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      clearInterval(statusTimer);
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    });
+  });
+
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    clearInterval(statusTimer);
+    modalEl.remove();
+  });
+
+  refreshStatus();
 
   if (modal) modal.show();
   modalEl.classList.add("show");
@@ -1383,6 +1629,14 @@ async function loadPorts() {
     selectedPort = preferred.device;
   }
   renderPorts(ports);
+  if (!autoConnectAttempted && !lastStatus?.connected) {
+    const supported = ports.filter((p) => p.supported);
+    if (supported.length === 1) {
+      selectedPort = supported[0].device;
+      autoConnectAttempted = true;
+      await connectSelected();
+    }
+  }
 }
 
 async function loadProfiles() {
@@ -1542,12 +1796,18 @@ async function applyProfile() {
 }
 
 async function saveToFlash() {
-  if (!window.pywebview?.api || !lastStatus?.connected) return;
+  if (!window.pywebview?.api || !lastStatus?.connected) {
+    setSaveStatus("Falha ao salvar na Flash.");
+    addSystemLog("Falha ao salvar na flash: nao conectado.", "error");
+    return;
+  }
   const result = await withPollingPaused(() => window.pywebview.api.save_to_flash());
   if (result?.ok) {
     setSaveStatus("Configuracao salva na Flash.");
+    addSystemLog("Save to flash concluido.");
   } else {
     setSaveStatus("Falha ao salvar na Flash.");
+    addSystemLog("Falha ao salvar na flash.", "error");
   }
 }
 
@@ -1737,6 +1997,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("openTerminalBtn")?.addEventListener("click", showTerminalModal);
 
   document.getElementById("openErrorsBtn")?.addEventListener("click", showErrorsModal);
+  document.getElementById("openFirmwareBtn")?.addEventListener("click", showFirmwareModal);
 
   document.getElementById("sendClassDefs")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;

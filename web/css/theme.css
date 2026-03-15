@@ -878,6 +878,42 @@ body.theme-blue {
   gap: 6px;
 }
 
+.hardware-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hardware-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(30, 40, 70, 0.5);
+  border: 1px solid var(--border);
+}
+
+.hw-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.hw-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.hw-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: right;
+  flex: 1;
+}
+
 .status-indicator {
   display: flex;
   align-items: center;
@@ -1733,6 +1769,10 @@ body.theme-blue {
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .profiles-item:hover {
@@ -1745,6 +1785,31 @@ body.theme-blue {
   background: rgba(63, 163, 255, 0.25);
   color: var(--text-primary);
   font-weight: 600;
+}
+
+.profiles-rename-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  background: rgba(20, 30, 54, 0.6);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profiles-rename-icon:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: rgba(63, 163, 255, 0.2);
+}
+
+.profiles-rename-icon.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .profiles-actions-row {
@@ -2022,6 +2087,83 @@ body.modal-open {
 
 .errors-row.info {
   background: rgba(63, 163, 255, 0.08);
+}
+
+.firmware-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 16px;
+}
+
+.firmware-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(12, 20, 40, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.firmware-file {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.firmware-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.firmware-dfu-state {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.firmware-file-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.firmware-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.firmware-progress {
+  width: 100%;
+  height: 10px;
+  background: rgba(90, 126, 190, 0.2);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(90, 126, 190, 0.35);
+}
+
+.firmware-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width 0.2s ease;
+}
+
+.firmware-progress-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.firmware-log {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .about-list {

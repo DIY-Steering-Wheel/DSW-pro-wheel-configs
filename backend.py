@@ -438,7 +438,9 @@ class SerialBackend:
     def save_to_flash(self) -> bool:
         if not self.is_connected():
             return False
-        reply = self.request("sys", "save")
+        reply = self.request("sys", "save", timeout=3.0)
+        if reply is None:
+            reply = self.request("sys", "save", timeout=3.0)
         return reply is not None
 
     def set_class_active(self, class_id: int, enabled: bool) -> bool:

@@ -1,5 +1,7 @@
 import os
 import logging
+import types
+import importlib.machinery
 from typing import Dict, List, Optional
 import webview
 import json
@@ -8,12 +10,152 @@ from protocol import encode_cmd
 from ui_registry import get_ui_schema, load_adjacent_configs
 
 
+class DfuService:
+    def __init__(self, serial: SerialBackend):
+        self._serial = serial
+        self.selected_file: Optional[str] = None
+        self.progress: int = 0
+        self.busy: bool = False
+        self.log: List[str] = []
+        self.last_error: Optional[str] = None
+        self._pydfu = None
+
+    def _log(self, message: str) -> None:
+        if not message:
+            return
+        self.log.append(str(message))
+        if len(self.log) > 400:
+            self.log = self.log[-300:]
+
+    def _progress(self, addr, offset, size) -> None:
+        if not size:
+            return
+        self.progress = int(offset * 100 / size)
+
+    def _load_pydfu(self):
+        if self._pydfu:
+            return self._pydfu
+        path = os.path.join(os.path.dirname(__file__), "dfu", "pydfu.py")
+        if not os.path.exists(path):
+            raise FileNotFoundError("pydfu.py nao encontrado")
+        loader = importlib.machinery.SourceFileLoader("pydfu_local", path)
+        module = types.ModuleType("pydfu_local")
+        loader.exec_module(module)
+        self._pydfu = module
+        return module
+
+    def probe_devices(self) -> Dict:
+        try:
+            pydfu = self._load_pydfu()
+            devices = pydfu.get_dfu_devices(idVendor=0x0483, idProduct=0xDF11)
+            return {"ok": True, "count": len(devices)}
+        except Exception as exc:
+            return {"ok": False, "count": 0, "error": str(exc)}
+
+    def enter_dfu_mode(self) -> bool:
+        if not self._serial.is_connected():
+            return False
+        self._serial.send_raw(encode_cmd("sys", "dfu"))
+        self._serial.disconnect()
+        self._log("Entrando em modo DFU...")
+        return True
+
+    def select_file(self, path: str) -> Dict:
+        if not path:
+            return {"ok": False, "error": "no_file"}
+        self.selected_file = path
+        self._log(f"Arquivo selecionado: {path}")
+        return {"ok": True, "path": path}
+
+    def upload(self, mass_erase: bool = False) -> Dict:
+        if self.busy:
+            return {"ok": False, "error": "busy"}
+        if not self.selected_file:
+            return {"ok": False, "error": "no_file"}
+        self.busy = True
+        self.last_error = None
+        self.progress = 0
+        try:
+            pydfu = self._load_pydfu()
+        except Exception as exc:
+            self.busy = False
+            self.last_error = str(exc)
+            self._log(f"Erro DFU: {exc}")
+            return {"ok": False, "error": "pydfu_missing"}
+
+        try:
+            dfu_devices = pydfu.get_dfu_devices(idVendor=0x0483, idProduct=0xDF11)
+            if not dfu_devices:
+                self._log("Nenhum dispositivo DFU encontrado.")
+                return {"ok": False, "error": "no_dfu_device"}
+            if len(dfu_devices) > 1:
+                self._log("Multiplos dispositivos DFU detectados.")
+            pydfu.init()
+            elements = None
+            if self.selected_file.endswith(".dfu"):
+                elements = pydfu.read_dfu_file(self.selected_file)
+            elif self.selected_file.endswith(".hex"):
+                elements, _metadata = pydfu.read_hex_file(self.selected_file, "#")
+            else:
+                self._log("Arquivo nao suportado (use .dfu ou .hex).")
+                return {"ok": False, "error": "unsupported_file"}
+
+            if not elements:
+                self._log("Falha ao ler o arquivo de firmware.")
+                return {"ok": False, "error": "invalid_file"}
+
+            size = sum([e.get("size", 0) for e in elements])
+            self._log(f"Upload iniciado: {len(elements)} segmentos ({round(size/1024,2)}kB)")
+            pydfu.write_elements(elements, mass_erase, progress=self._progress, logfunc=self._log)
+            self._log("Upload concluido. Reinicie a placa.")
+            return {"ok": True}
+        except Exception as exc:
+            self.last_error = str(exc)
+            self._log(f"Erro durante upload: {exc}")
+            return {"ok": False, "error": "upload_failed"}
+        finally:
+            try:
+                self._load_pydfu().exit_dfu()
+            except Exception:
+                pass
+            self.busy = False
+
+    def mass_erase(self) -> Dict:
+        if self.busy:
+            return {"ok": False, "error": "busy"}
+        self.busy = True
+        self.last_error = None
+        try:
+            pydfu = self._load_pydfu()
+            dfu_devices = pydfu.get_dfu_devices(idVendor=0x0483, idProduct=0xDF11)
+            if not dfu_devices:
+                self._log("Nenhum dispositivo DFU encontrado.")
+                return {"ok": False, "error": "no_dfu_device"}
+            pydfu.init()
+            self._log("Apagando flash completa...")
+            pydfu.mass_erase()
+            self.progress = 100
+            self._log("Flash apagada.")
+            return {"ok": True}
+        except Exception as exc:
+            self.last_error = str(exc)
+            self._log(f"Erro ao apagar: {exc}")
+            return {"ok": False, "error": "erase_failed"}
+        finally:
+            try:
+                self._load_pydfu().exit_dfu()
+            except Exception:
+                pass
+            self.busy = False
+
+
 class Api:
     def __init__(self):
         self._schema = get_ui_schema()
         self._serial = SerialBackend()
         self._profiles = ProfileStore()
         self._web_dir = os.path.join(os.path.dirname(__file__), "web")
+        self._dfu = DfuService(self._serial)
 
     @staticmethod
     def _first_path(selection):
@@ -22,6 +164,18 @@ class Api:
         if isinstance(selection, (list, tuple)):
             return selection[0] if selection else None
         return selection
+
+    @staticmethod
+    def _file_dialog(mode: str, **kwargs):
+        dialog_type = None
+        try:
+            if mode == "open":
+                dialog_type = webview.FileDialog.OPEN
+            elif mode == "save":
+                dialog_type = webview.FileDialog.SAVE
+        except AttributeError:
+            dialog_type = webview.OPEN_DIALOG if mode == "open" else webview.SAVE_DIALOG
+        return webview.windows[0].create_file_dialog(dialog_type, **kwargs)
 
     def get_ui_schema(self) -> Dict:
         return self._schema
@@ -109,14 +263,48 @@ class Api:
         self._serial.send_raw(encode_cmd("sys", "errorsclr"))
         return {"ok": True}
 
+    def dfu_enter(self) -> Dict:
+        return {"ok": self._dfu.enter_dfu_mode()}
+
+    def dfu_select_file(self) -> Dict:
+        selection = self._file_dialog(
+            "open",
+            allow_multiple=False,
+            file_types=("Firmware (*.dfu *.hex)",),
+        )
+        path = self._first_path(selection)
+        if not path:
+            return {"ok": False, "error": "canceled"}
+        return self._dfu.select_file(path)
+
+    def dfu_upload(self, mass_erase: bool = False) -> Dict:
+        return self._dfu.upload(mass_erase=mass_erase)
+
+    def dfu_mass_erase(self) -> Dict:
+        return self._dfu.mass_erase()
+
+    def dfu_status(self) -> Dict:
+        probe = self._dfu.probe_devices()
+        return {
+            "ok": True,
+            "busy": self._dfu.busy,
+            "progress": self._dfu.progress,
+            "selected": self._dfu.selected_file,
+            "log": self._dfu.log[-200:],
+            "error": self._dfu.last_error,
+            "dfu_ok": probe.get("ok"),
+            "dfu_count": probe.get("count", 0),
+            "dfu_error": probe.get("error"),
+        }
+
     def save_flash_dump(self) -> Dict:
         if not self._serial.is_connected():
             return {"ok": False, "error": "not_connected"}
         dump_raw = self._serial.request("sys", "flashdump")
         if not dump_raw:
             return {"ok": False, "error": "no_data"}
-        selection = webview.windows[0].create_file_dialog(
-            webview.SAVE_DIALOG,
+        selection = self._file_dialog(
+            "save",
             save_filename="dump.json",
             file_types=("JSON (*.json)",),
         )
@@ -142,8 +330,8 @@ class Api:
     def load_flash_dump(self) -> Dict:
         if not self._serial.is_connected():
             return {"ok": False, "error": "not_connected"}
-        selection = webview.windows[0].create_file_dialog(
-            webview.OPEN_DIALOG,
+        selection = self._file_dialog(
+            "open",
             allow_multiple=False,
             file_types=("JSON (*.json)",),
         )
@@ -331,8 +519,8 @@ class Api:
     def export_profile(self, name: str) -> Dict:
         if not name or name == "None":
             return {"ok": False, "error": "invalid_profile"}
-        selection = webview.windows[0].create_file_dialog(
-            webview.SAVE_DIALOG,
+        selection = self._file_dialog(
+            "save",
             save_filename=f"{name}.json",
             file_types=("JSON (*.json)",),
         )
@@ -343,8 +531,8 @@ class Api:
         return {"ok": ok}
 
     def import_profile(self) -> Dict:
-        selection = webview.windows[0].create_file_dialog(
-            webview.OPEN_DIALOG,
+        selection = self._file_dialog(
+            "open",
             allow_multiple=False,
             file_types=("JSON (*.json)",),
         )
