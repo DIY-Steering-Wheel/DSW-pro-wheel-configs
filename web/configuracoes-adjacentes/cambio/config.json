@@ -1,0 +1,8 @@
+﻿{
+  "id": "cambio",
+  "title": "Câmbio",
+  "icon": "bi-joystick",
+  "definition_key": "shifter",
+  "clsname_match": ["shifter", "cambio", "hshifter"],
+  "requires_active": true
+}

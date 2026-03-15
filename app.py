@@ -1,11 +1,11 @@
 import os
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import webview
 
 from backend import ProfileStore, SerialBackend
-from ui_registry import get_ui_schema
+from ui_registry import get_ui_schema, load_adjacent_configs
 
 
 class Api:
@@ -13,6 +13,7 @@ class Api:
         self._schema = get_ui_schema()
         self._serial = SerialBackend()
         self._profiles = ProfileStore()
+        self._web_dir = os.path.join(os.path.dirname(__file__), "web")
 
     @staticmethod
     def _first_path(selection):
@@ -24,6 +25,9 @@ class Api:
 
     def get_ui_schema(self) -> Dict:
         return self._schema
+
+    def get_adjacent_configs(self) -> List[Dict]:
+        return load_adjacent_configs(self._web_dir)
 
     def list_ports(self) -> List[Dict]:
         return self._serial.list_ports()
@@ -103,6 +107,33 @@ class Api:
             return f"Erro: {str(e)}"
         except Exception as e:
             return f"Erro: {str(e)}"
+
+    def serial_request(
+        self,
+        cls: str,
+        cmd: str,
+        instance: int = 0,
+        adr: Optional[int] = None,
+        typechar: str = "?",
+        timeout: float = 1.5,
+    ) -> str:
+        if not self._serial.is_connected():
+            return ""
+        reply = self._serial.request(cls, cmd, instance=instance, adr=adr, typechar=typechar, timeout=timeout)
+        return reply or ""
+
+    def serial_set_value(
+        self,
+        cls: str,
+        cmd: str,
+        value: int,
+        instance: int = 0,
+        adr: Optional[int] = None,
+    ) -> Dict:
+        if not self._serial.is_connected():
+            return {"ok": False, "error": "not_connected"}
+        self._serial.send_value(cls, cmd, value=value, instance=instance, adr=adr)
+        return {"ok": True}
 
     def get_profiles(self) -> Dict:
         return {

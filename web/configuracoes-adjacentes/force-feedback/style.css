@@ -1,0 +1,48 @@
+﻿.adjacent-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  color: var(--text-primary);
+}
+
+.adjacent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adjacent-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.adjacent-card {
+  background: rgba(12, 18, 34, 0.6);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adjacent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adjacent-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.adjacent-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}

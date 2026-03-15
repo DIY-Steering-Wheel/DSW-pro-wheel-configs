@@ -1,3 +1,5 @@
+import json
+import os
 from dataclasses import dataclass, asdict
 from typing import Dict, List
 
@@ -171,6 +173,8 @@ def build_tabs_from_lsactive(reply: str) -> List[Dict]:
                 "id": item["id"],
                 "key": f"{item['clsname']}:{item['unique']}",
                 "title": f"{item['name']}{axis_hint}",
+                "name": item["name"],
+                "clsname": item["clsname"],
                 "label": info.label,
                 "icon": info.icon,
                 "description": info.description,
@@ -178,6 +182,52 @@ def build_tabs_from_lsactive(reply: str) -> List[Dict]:
             }
         )
     return tabs
+
+
+def load_adjacent_configs(web_dir: str) -> List[Dict]:
+    root = os.path.join(web_dir, "configuracoes-adjacentes")
+    if not os.path.isdir(root):
+        return []
+
+    configs: List[Dict] = []
+    for entry in os.scandir(root):
+        if not entry.is_dir():
+            continue
+        cfg_path = os.path.join(entry.path, "config.json")
+        if not os.path.exists(cfg_path):
+            continue
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        slug = entry.name
+        cfg_id = data.get("id") or slug
+        title = data.get("title") or slug
+        view = data.get("view") or f"configuracoes-adjacentes/{slug}/index.html"
+        script = data.get("script") or f"configuracoes-adjacentes/{slug}/index.js"
+        style = data.get("style") or f"configuracoes-adjacentes/{slug}/style.css"
+
+        configs.append(
+            {
+                "id": cfg_id,
+                "title": title,
+                "icon": data.get("icon") or "bi-sliders",
+                "class_id": data.get("class_id"),
+                "clsname_match": data.get("clsname_match") or [],
+                "definition_key": data.get("definition_key"),
+                "definition_match": data.get("definition_match") or [],
+                "requires_active": data.get("requires_active", True),
+                "view": view,
+                "script": script,
+                "style": style,
+            }
+        )
+    return configs
 
 
 def sample_lsactive() -> str:

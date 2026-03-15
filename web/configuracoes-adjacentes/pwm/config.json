@@ -1,0 +1,9 @@
+﻿{
+  "id": "pwm",
+  "title": "Driver PWM",
+  "icon": "bi-sine-wave",
+  "definition_key": "driver",
+  "definition_match": ["pwm"],
+  "clsname_match": ["pwm"],
+  "requires_active": true
+}

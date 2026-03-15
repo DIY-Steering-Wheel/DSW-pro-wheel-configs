@@ -1,0 +1,7 @@
+﻿{
+  "id": "ain",
+  "title": "AIN (Analógico)",
+  "icon": "bi-filter-circle",
+  "clsname_match": ["analog", "ain", "apin"],
+  "requires_active": true
+}

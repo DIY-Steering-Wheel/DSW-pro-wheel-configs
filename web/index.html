@@ -25,7 +25,7 @@
 
         <div class="sidebar-body">
           <div class="sidebar-section" id="monitoringSection">
-            <div class="section-header">Monitoramento</div>
+            <div class="section-header">Calibração</div>
             <div class="tree-nav" id="calibrationTree">
               <div class="tree-item active" data-view="dashboard" data-title="Painel">
                 <i class="bi bi-grid-1x2"></i>
@@ -46,27 +46,25 @@
                   <span>Effect Live Forces</span>
                 </div>
               </div>
+              <div id="adjacentTree" class="tree-group"></div>
             </div>
           </div>
           <!-- Painel de Conexão -->
           <div class="sidebar-section">
-            <div class="section-header">Conexão</div>
+            <div class="section-header">Hardware</div>
             <div class="connection-status">
               <div class="status-indicator">
-                <span class="status-dot"></span>
-                <span class="status-text">Desconectado</span>
+                <span class="status-dot" id="connectionDot"></span>
+                <span class="status-text" id="connectionState">Desconectado</span>
               </div>
-              <div class="status-hint" id="connectionLabel">Nenhum dispositivo</div>
             </div>
             <div class="connection-status hardware-status">
-              <div class="status-hint">Hardware: <span id="hwPortStatus">--</span></div>
-              <div class="status-hint">FFB: <span id="ffbStatus">Inativo</span></div>
+              <div class="status-indicator ffb-indicator">
+                <span class="status-dot ffb-dot" id="ffbDot"></span>
+                <span class="status-text">Force Feedback</span>
+                <span class="status-hint" id="ffbStatus">0 Hz</span>
+              </div>
             </div>
-          </div>
-
-          <!-- Abas Dinâmicas (para classes ativas) -->
-          <div id="activeTabs" class="sidebar-tabs">
-            <!-- Gerado dinamicamente por JavaScript -->
           </div>
         </div>
 
@@ -122,10 +120,6 @@
                   </div>
                 </div>
                 <div class="metrics-row">
-                  <div class="metric-item">
-                    <span class="metric-label">Hardware</span>
-                    <span class="metric-value" id="hwValue">--</span>
-                  </div>
                   <div class="metric-item">
                     <span class="metric-label">Conexão</span>
                     <span class="metric-value" id="connValue">--</span>
@@ -200,6 +194,8 @@
               </div>
             </div>
           </section>
+
+          <div id="adjacentViews"></div>
         </div>
 
         <!-- FOOTER -->

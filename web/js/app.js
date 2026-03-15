@@ -3,6 +3,9 @@ let selectedProfile = null;
 let mainClassData = { current: null, classes: [] };
 let classCatalog = [];
 let activeClassIds = new Set();
+let activeClasses = [];
+let adjacentConfigs = [];
+let currentViewKey = "dashboard";
 let classDefinitions = {
   driver: { current: null, classes: [] },
   encoder: { current: null, classes: [] },
@@ -37,6 +40,21 @@ const EFFECTS_CLASS_ID = 0xA02;
 let monitoringTimer = null;
 let monitoringAxis = 0;
 let ffbTimer = null;
+
+function isMonitoringView(viewKey) {
+  return viewKey === "monitoring-status" || viewKey === "monitoring-live";
+}
+
+function getViewElement(viewKey) {
+  if (VIEW_IDS[viewKey]) {
+    return document.getElementById(VIEW_IDS[viewKey]);
+  }
+  if (viewKey && viewKey.startsWith("adjacent:")) {
+    const id = viewKey.slice("adjacent:".length);
+    return document.getElementById(`view-adjacent-${id}`);
+  }
+  return null;
+}
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -82,6 +100,88 @@ function setTopbarTitle(title) {
   if (titleEl) titleEl.textContent = title || "Painel";
 }
 
+function ensureAdjacentViews() {
+  const container = document.getElementById("adjacentViews");
+  if (!container) return;
+  adjacentConfigs.forEach((cfg) => {
+    const viewId = `view-adjacent-${cfg.id}`;
+    if (document.getElementById(viewId)) {
+      return;
+    }
+    const section = document.createElement("section");
+    section.id = viewId;
+    section.className = "view-panel";
+    section.dataset.view = `adjacent:${cfg.id}`;
+    section.innerHTML = `
+      <div class="analysis-card">
+        <div class="card-body">
+          <iframe class="adjacent-frame" src="${cfg.view}" title="${cfg.title}"></iframe>
+        </div>
+      </div>
+    `;
+    container.appendChild(section);
+  });
+}
+
+function isConfigVisible(cfg) {
+  if (!cfg) return false;
+  if (cfg.requires_active === false) return true;
+  if (cfg.definition_key) {
+    const def = classDefinitions?.[cfg.definition_key];
+    if (!def || def.current === null || def.current === undefined) {
+      return false;
+    }
+    const matchers = Array.isArray(cfg.definition_match)
+      ? cfg.definition_match
+      : cfg.definition_match
+        ? [cfg.definition_match]
+        : [];
+    if (matchers.length > 0 && Array.isArray(def.classes)) {
+      const current = def.classes.find((entry) => entry.id === def.current);
+      const name = String(current?.name || "").toLowerCase();
+      return matchers.some((needle) => name.includes(String(needle).toLowerCase()));
+    }
+    return true;
+  }
+  if (cfg.class_id !== null && cfg.class_id !== undefined) {
+    return activeClassIds.has(Number(cfg.class_id));
+  }
+  const matches = Array.isArray(cfg.clsname_match)
+    ? cfg.clsname_match
+    : cfg.clsname_match
+      ? [cfg.clsname_match]
+      : [];
+  if (matches.length === 0) {
+    return true;
+  }
+  return activeClasses.some((entry) => {
+    const clsname = String(entry.clsname || entry.name || entry.label || "").toLowerCase();
+    return matches.some((needle) => clsname.includes(String(needle).toLowerCase()));
+  });
+}
+
+function renderCalibrationTree() {
+  const container = document.getElementById("adjacentTree");
+  if (!container) return;
+  container.innerHTML = "";
+  const visible = adjacentConfigs.filter(isConfigVisible);
+  if (visible.length === 0) {
+    return;
+  }
+  visible.forEach((cfg) => {
+    const item = document.createElement("div");
+    item.className = "tree-item";
+    item.setAttribute("data-view", `adjacent:${cfg.id}`);
+    item.setAttribute("data-title", cfg.title);
+    item.innerHTML = `
+      <i class="bi ${cfg.icon || "bi-sliders"}"></i>
+      <span>${cfg.title}</span>
+    `;
+    container.appendChild(item);
+  });
+  bindTreeHandlers();
+}
+
 function activateTreeItemByView(viewKey) {
   const tree = document.getElementById("calibrationTree");
   if (!tree) return;
@@ -90,13 +190,41 @@ function activateTreeItemByView(viewKey) {
   target?.classList.add("active");
 }
 
+function bindTreeHandlers() {
+  const tree = document.getElementById("calibrationTree");
+  const treeChildren = tree?.querySelector('.tree-children[data-parent="monitoring"]');
+  tree?.querySelectorAll(".tree-item").forEach((item) => {
+    if (item.dataset.bound === "1") return;
+    item.dataset.bound = "1";
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (item.classList.contains("tree-parent")) {
+        treeChildren?.classList.toggle("collapsed");
+        return;
+      }
+      const viewKey = item.getAttribute("data-view");
+      const title = item.getAttribute("data-title") || "Painel";
+      if (isMonitoringView(viewKey)) {
+        requestOpenMonitoring(viewKey, title);
+        return;
+      }
+      setActiveView(viewKey, title);
+      activateTreeItemByView(viewKey);
+    });
+  });
+}
+
 function setActiveView(viewKey, title) {
+  currentViewKey = viewKey || "dashboard";
+  if (!isMonitoringView(viewKey)) {
+    stopMonitoringPolling();
+  }
   Object.values(VIEW_IDS).forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.classList.remove("active");
   });
-  const viewId = VIEW_IDS[viewKey];
-  const viewEl = viewId ? document.getElementById(viewId) : null;
+  document.querySelectorAll("[id^='view-adjacent-']").forEach((el) => el.classList.remove("active"));
+  const viewEl = getViewElement(viewKey);
   if (viewEl) viewEl.classList.add("active");
   setTopbarTitle(title);
 }
@@ -108,32 +236,7 @@ function requestOpenMonitoring(viewKey, title) {
   }
   setActiveView(viewKey, title);
   activateTreeItemByView(viewKey);
-}
-
-function renderActiveTabs() {
-  const container = document.getElementById("activeTabs");
-  if (!container) return;
-  
-  container.innerHTML = "";
-  
-  if (!activeClassIds || activeClassIds.size === 0) {
-    return; // Sem abas se nenhuma classe está ativa
-  }
-  
-  // Renderizar apenas as classes ativas como abas no sidebar
-  classCatalog.forEach((entry) => {
-    if (activeClassIds.has(entry.id)) {
-      const tab = document.createElement("a");
-      tab.href = "#";
-      tab.className = "sidebar-tab";
-      tab.innerHTML = `<i class="bi ${entry.icon}"></i><span>${entry.label}</span>`;
-      tab.addEventListener("click", (e) => {
-        e.preventDefault();
-        // Aqui pode adicionar lógica para mostrar configurações da classe no painel
-      });
-      container.appendChild(tab);
-    }
-  });
+  startMonitoringPolling();
 }
 
 function renderClasses() {
@@ -180,6 +283,89 @@ function renderClasses() {
     const item = document.createElement("div");
     item.className = "class-item class-definition";
     const optionLabel = (entry) => entry.name || entry.label || `Classe ${entry.id}`;
+    const isShifter = definition.key === "shifter";
+
+    if (isShifter) {
+      const offOption = options.find((entry) => entry.id === 0) || options[0];
+      const onOption = options.find((entry) => entry.id !== (offOption?.id ?? -1)) || options[0];
+      const isEnabled = selected !== null && selected !== undefined && (offOption ? selected !== offOption.id : selected > 0);
+      const optionValues = options
+        .map((entry) => `<option value="${entry.id}">${optionLabel(entry)}</option>`)
+        .join("");
+      const toggleDisabled = isDisabled || options.length === 0;
+
+      item.innerHTML = `
+        <div class="class-name">
+          <i class="bi ${definition.icon}"></i>
+          <span>${definition.label}</span>
+        </div>
+        <div class="class-desc">${definition.description}</div>
+        <label class="toggle-switch">
+          <input type="checkbox" class="class-definition-toggle" data-definition="${definition.key}" ${
+            toggleDisabled ? "disabled" : ""
+          } ${isEnabled ? "checked" : ""}>
+          <span class="toggle-slider"></span>
+          <span class="toggle-state">${isEnabled ? "Ligado" : "Desligado"}</span>
+        </label>
+        ${options.length > 0 ? `
+          <div class="class-select">
+            <select class="form-select-sm class-definition-select" data-definition="${definition.key}" ${
+              toggleDisabled || !isEnabled ? "disabled" : ""
+            }>
+              ${optionValues}
+            </select>
+          </div>
+        ` : ""}
+      `;
+      container.appendChild(item);
+
+      const toggle = item.querySelector(".class-definition-toggle");
+      const label = item.querySelector(".toggle-state");
+      const select = item.querySelector(".class-definition-select");
+
+      if (select) {
+        select.value = selected !== null && selected !== undefined ? String(selected) : "";
+        select.addEventListener("change", () => {
+          const value = parseInt(select.value, 10);
+          classDefinitions[definition.key] = {
+            ...data,
+            current: Number.isNaN(value) ? null : value,
+          };
+          renderCalibrationTree();
+          applyClassDefinitions();
+        });
+      }
+
+      if (toggle) {
+        toggle.addEventListener("change", () => {
+          let value = offOption?.id ?? 0;
+          if (toggle.checked) {
+            if (select && select.value) {
+              value = parseInt(select.value, 10);
+            } else if (onOption) {
+              value = onOption.id;
+            }
+          }
+          if (label) {
+            label.textContent = toggle.checked ? "Ligado" : "Desligado";
+          }
+          if (select) {
+            select.disabled = toggleDisabled || !toggle.checked;
+            if (toggle.checked && value !== null && value !== undefined) {
+              select.value = String(value);
+            }
+          }
+          classDefinitions[definition.key] = {
+            ...data,
+            current: Number.isNaN(value) ? null : value,
+          };
+          renderCalibrationTree();
+          applyClassDefinitions();
+        });
+      }
+      return;
+    }
+
     const optionValues = options
       .map((entry) => {
         const disabled = entry.creatable === false && entry.id !== selected ? "disabled" : "";
@@ -215,6 +401,7 @@ function renderClasses() {
           ...data,
           current: Number.isNaN(value) ? null : value,
         };
+        renderCalibrationTree();
       });
     }
   });
@@ -278,26 +465,17 @@ function updateStatus(status) {
   const connected = status?.connected;
   
   // Update sidebar connection status
-  const pill = document.querySelector(".status-indicator");
-  const dot = document.querySelector(".status-dot");
-  const statusText = document.querySelector(".status-text");
-  
+  const dot = document.getElementById("connectionDot");
+  const statusText = document.getElementById("connectionState");
   if (dot) {
     dot.classList.toggle("connected", connected);
   }
   if (statusText) {
-    statusText.textContent = connected ? "Conectado" : "Desconectado";
-  }
-  
-  // Update connection label
-  const label = document.getElementById("connectionLabel");
-  if (label) {
-    label.textContent = connected ? `Porta: ${status.port}` : "Nenhum dispositivo";
+    statusText.textContent = connected ? `Conectado com ${status.port || "--"}` : "Desconectado";
   }
   
   updateFooterConnection(status);
   setText("fwValue", status?.fw || "--");
-  setText("hwValue", status?.hw || "--");
   
   // Parse RAM value from "max:current" format
   if (status?.heapfree) {
@@ -315,8 +493,6 @@ function updateStatus(status) {
   
   setText("tempValue", status?.temp ? `${status.temp} °C` : "--");
   setText("connValue", connected ? "Conectado" : "--");
-  const hwPort = document.getElementById("hwPortStatus");
-  if (hwPort) hwPort.textContent = connected ? status?.port || "--" : "--";
   updateMonitoringLock(connected);
 }
 
@@ -329,7 +505,7 @@ function updateMonitoringLock(connected) {
   }
   const section = document.getElementById("monitoringSection");
   if (section) {
-    section.style.display = hasEffects ? "" : "none";
+    section.style.display = "";
   }
   const parentItem = document.querySelector(".tree-item.tree-parent");
   const children = document.querySelector('.tree-children[data-parent="monitoring"]');
@@ -344,9 +520,11 @@ function updateMonitoringLock(connected) {
   });
   if (!hasEffects) {
     stopMonitoringPolling();
-    setActiveView("dashboard", "Painel");
-    activateTreeItemByView("dashboard");
-  } else {
+    if (isMonitoringView(currentViewKey)) {
+      setActiveView("dashboard", "Painel");
+      activateTreeItemByView("dashboard");
+    }
+  } else if (isMonitoringView(currentViewKey)) {
     startMonitoringPolling();
   }
 }
@@ -354,7 +532,12 @@ function updateMonitoringLock(connected) {
 function startMonitoringPolling() {
   if (monitoringTimer) return;
   monitoringTimer = setInterval(async () => {
-    if (!window.pywebview?.api || !lastStatus?.connected || !activeClassIds.has(EFFECTS_CLASS_ID)) {
+    if (
+      !window.pywebview?.api ||
+      !lastStatus?.connected ||
+      !activeClassIds.has(EFFECTS_CLASS_ID) ||
+      !isMonitoringView(currentViewKey)
+    ) {
       return;
     }
     const status = await window.pywebview.api.get_effects_status(monitoringAxis);
@@ -384,9 +567,11 @@ function startFfbPolling() {
     }
     const data = await window.pywebview.api.get_ffb_status();
     const el = document.getElementById("ffbStatus");
+    const dot = document.getElementById("ffbDot");
     if (!el) return;
     if (!data?.ok) {
-      el.textContent = "Inativo";
+      el.textContent = "0 Hz";
+      if (dot) dot.classList.remove("active");
       return;
     }
     if (data.active) {
@@ -394,6 +579,8 @@ function startFfbPolling() {
     } else {
       el.textContent = `${data.rate} hz`;
     }
+    const isActive = data.active && data.rate > 0;
+    if (dot) dot.classList.toggle("active", isActive);
   }, 1000);
 }
 
@@ -402,7 +589,9 @@ function stopFfbPolling() {
   clearInterval(ffbTimer);
   ffbTimer = null;
   const el = document.getElementById("ffbStatus");
-  if (el) el.textContent = "Inativo";
+  if (el) el.textContent = "0 Hz";
+  const dot = document.getElementById("ffbDot");
+  if (dot) dot.classList.remove("active");
 }
 
 function renderMainClasses(data) {
@@ -435,9 +624,10 @@ function renderMainClasses(data) {
 }
 
 function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
   // Remove any existing modals and backdrops
   document.querySelectorAll(".modal.fade").forEach((m) => {
-    const instance = bootstrap.Modal.getInstance(m);
+    const instance = hasBootstrap ? bootstrap.Modal.getInstance(m) : null;
     if (instance) instance.hide();
     setTimeout(() => m.remove(), 300);
   });
@@ -468,15 +658,12 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
     </div>
   `;
   document.body.appendChild(modalEl);
-  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (modal) {
-        modal.hide();
-      } else {
-        modalEl.classList.remove("show");
-        modalEl.style.display = "none";
-      }
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
     });
   });
   const confirmBtn = modalEl.querySelector(".confirm-btn");
@@ -485,29 +672,25 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
     if (onConfirm) {
       await onConfirm();
     }
-    if (modal) {
-      modal.hide();
-    } else {
-      modalEl.classList.remove("show");
-      modalEl.style.display = "none";
-    }
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
   });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
-  if (modal) {
-    modal.show();
-  } else {
-    modalEl.classList.add("show");
-    modalEl.style.display = "flex";
-  }
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
 }
 
 function showProfilesModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
   // Remove existing modals
   document.querySelectorAll(".modal.fade").forEach((m) => {
-    if (m.id !== "profilesModal" && bootstrap.Modal.getInstance(m)) {
-      bootstrap.Modal.getInstance(m).hide();
+    const instance = hasBootstrap ? bootstrap.Modal.getInstance(m) : null;
+    if (m.id !== "profilesModal" && instance) {
+      instance.hide();
       setTimeout(() => m.remove(), 300);
     }
   });
@@ -596,19 +779,16 @@ function showProfilesModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (modal) {
-        modal.hide();
-      } else {
-        modalEl.classList.remove("show");
-        modalEl.style.display = "none";
-      }
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
     });
   });
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
-    btn.addEventListener("click", () => modal.hide());
+    btn.addEventListener("click", () => modal && modal.hide());
   });
 
   // Atualizar select
@@ -620,12 +800,9 @@ function showProfilesModal() {
 
   // Event listeners
   modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
-    if (modal) {
-      modal.hide();
-    } else {
-      modalEl.classList.remove("show");
-      modalEl.style.display = "none";
-    }
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
   });
   modalEl.querySelector(".profiles-apply").addEventListener("click", async () => {
     selectedProfile = select.value;
@@ -646,15 +823,13 @@ function showProfilesModal() {
     modalEl.remove();
   });
 
-  if (modal) {
-    modal.show();
-  } else {
-    modalEl.classList.add("show");
-    modalEl.style.display = "flex";
-  }
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
 }
 
 function showTerminalModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
   const modalEl = document.createElement("div");
   modalEl.className = "modal fade";
   modalEl.tabIndex = -1;
@@ -685,21 +860,18 @@ function showTerminalModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (modal) {
-        modal.hide();
-      } else {
-        modalEl.classList.remove("show");
-        modalEl.style.display = "none";
-      }
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
     });
   });
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
-    btn.addEventListener("click", () => modal.hide());
+    btn.addEventListener("click", () => modal && modal.hide());
   });
-  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal && modal.hide());
 
   // Atualizar display
   const output = modalEl.querySelector(".terminal-output");
@@ -744,26 +916,21 @@ function showTerminalModal() {
   });
 
   modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
-    if (modal) {
-      modal.hide();
-    } else {
-      modalEl.classList.remove("show");
-      modalEl.style.display = "none";
-    }
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
   });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
 
-  if (modal) {
-    modal.show();
-  } else {
-    modalEl.classList.add("show");
-    modalEl.style.display = "flex";
-  }
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
 }
 
 function showErrorsModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
   const modalEl = document.createElement("div");
   modalEl.className = "modal fade";
   modalEl.tabIndex = -1;
@@ -794,21 +961,18 @@ function showErrorsModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (modal) {
-        modal.hide();
-      } else {
-        modalEl.classList.remove("show");
-        modalEl.style.display = "none";
-      }
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
     });
   });
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
-    btn.addEventListener("click", () => modal.hide());
+    btn.addEventListener("click", () => modal && modal.hide());
   });
-  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal && modal.hide());
 
   const list = modalEl.querySelector(".errors-list");
   list.innerHTML = errorsList.map((error) => `
@@ -825,23 +989,17 @@ function showErrorsModal() {
   });
 
   modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
-    if (modal) {
-      modal.hide();
-    } else {
-      modalEl.classList.remove("show");
-      modalEl.style.display = "none";
-    }
+    if (modal) modal.hide();
+    modalEl.classList.remove("show");
+    modalEl.style.display = "none";
   });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
 
-  if (modal) {
-    modal.show();
-  } else {
-    modalEl.classList.add("show");
-    modalEl.style.display = "flex";
-  }
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
 }
 
 async function loadPorts() {
@@ -881,6 +1039,17 @@ async function loadCatalog() {
   classCatalog = schema?.classes || [];
 }
 
+async function loadAdjacentConfigs() {
+  if (!window.pywebview?.api) {
+    adjacentConfigs = [];
+    renderCalibrationTree();
+    return;
+  }
+  adjacentConfigs = await window.pywebview.api.get_adjacent_configs();
+  ensureAdjacentViews();
+  renderCalibrationTree();
+}
+
 async function loadClassDefinitions() {
   if (!window.pywebview?.api || !lastStatus?.connected) {
     classDefinitions = {
@@ -898,21 +1067,24 @@ async function loadClassDefinitions() {
     shifter: data?.shifter || { current: null, modes: [] },
   };
   renderClasses();
+  renderCalibrationTree();
 }
 
 async function loadActiveClasses() {
   activeClassIds = new Set();
+  activeClasses = [];
   if (!window.pywebview?.api || !lastStatus?.connected) {
     renderClasses();
-    renderActiveTabs();
+    renderCalibrationTree();
     return;
   }
   const active = await window.pywebview.api.get_active_classes();
   if (active && active.length) {
+    activeClasses = active;
     active.forEach((entry) => activeClassIds.add(entry.id));
   }
   renderClasses();
-  renderActiveTabs();
+  renderCalibrationTree();
   updateMonitoringLock(lastStatus?.connected);
 }
 
@@ -931,6 +1103,7 @@ async function connectSelected() {
     return;
   }
   await loadCatalog();
+  await loadAdjacentConfigs();
   await loadProfiles();
   await loadClassDefinitions();
   await loadActiveClasses();
@@ -942,6 +1115,7 @@ async function disconnectCurrent() {
   const result = await window.pywebview.api.disconnect();
   updateStatus(result.status);
   activeClassIds = new Set();
+  activeClasses = [];
   classDefinitions = {
     driver: { current: null, classes: [] },
     encoder: { current: null, classes: [] },
@@ -950,6 +1124,7 @@ async function disconnectCurrent() {
   setActiveView("dashboard", "Painel");
   activateTreeItemByView("dashboard");
   renderClasses();
+  renderCalibrationTree();
   renderMainClasses({ current: null, classes: [] });
 }
 
@@ -1069,6 +1244,10 @@ function updateErrorsDisplay() {
 }
 
 function openProfilesModal() {
+  if (typeof bootstrap === "undefined" || !bootstrap.Modal) {
+    showProfilesModal();
+    return;
+  }
   const modal = new bootstrap.Modal(document.getElementById("profilesModal"));
   modal.show();
 }
@@ -1088,6 +1267,7 @@ async function refreshAll() {
     setSaveStatus("Carregando... 4");
     await loadCatalog();
     setSaveStatus("Carregando... 5");
+    await loadAdjacentConfigs();
     await loadClassDefinitions();
     setSaveStatus("Carregando... 6");
     await loadActiveClasses();
@@ -1124,25 +1304,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  const tree = document.getElementById("calibrationTree");
-  const treeChildren = tree?.querySelector('.tree-children[data-parent="monitoring"]');
-  tree?.querySelectorAll(".tree-item").forEach((item) => {
-    item.addEventListener("click", (event) => {
-      event.preventDefault();
-      if (item.classList.contains("tree-parent")) {
-        treeChildren?.classList.toggle("collapsed");
-        return;
-      }
-      const viewKey = item.getAttribute("data-view");
-      const title = item.getAttribute("data-title") || "Painel";
-      if (viewKey === "monitoring-status" || viewKey === "monitoring-live") {
-        requestOpenMonitoring(viewKey, title);
-        return;
-      }
-      setActiveView(viewKey, title);
-      activateTreeItemByView(viewKey);
-    });
-  });
+  bindTreeHandlers();
 
   // Connection and port management
   document.getElementById("refreshPorts")?.addEventListener("click", loadPorts);

@@ -1,0 +1,78 @@
+﻿.adjacent-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  color: var(--text-primary);
+}
+
+.adjacent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adjacent-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.adjacent-card {
+  background: rgba(12, 18, 34, 0.6);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adjacent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.adjacent-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.adjacent-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pin-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pin-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(9, 15, 28, 0.6);
+  border: 1px solid rgba(90, 126, 190, 0.25);
+  font-size: 12px;
+}
+
+.pin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.pin-toggle input {
+  accent-color: var(--accent);
+}

@@ -820,6 +820,26 @@ body.theme-blue {
   padding: 6px 8px;
 }
 
+.tree-divider {
+  height: 1px;
+  background: rgba(90, 126, 190, 0.35);
+  margin: 6px 0;
+}
+
+.tree-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.tree-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .section-header {
   font-size: 11px;
   font-weight: 700;
@@ -856,6 +876,16 @@ body.theme-blue {
   background: var(--success);
 }
 
+.status-dot.active {
+  background: var(--success);
+}
+
+
+.status-indicator.ffb-indicator {
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .status-text {
   color: var(--text-secondary);
 }
@@ -863,6 +893,14 @@ body.theme-blue {
 .status-hint {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.adjacent-frame {
+  width: 100%;
+  min-height: 520px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(12, 18, 34, 0.6);
 }
 
 /* Dynamic Tabs in Sidebar */
@@ -1229,6 +1267,48 @@ body.theme-blue {
 
 .class-toggle input[type="checkbox"] {
   cursor: pointer;
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-switch input {
+  display: none;
+}
+
+.toggle-slider {
+  width: 38px;
+  height: 20px;
+  background: rgba(120, 140, 190, 0.4);
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.2s ease;
+  border: 1px solid rgba(90, 126, 190, 0.5);
+}
+
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff7b7b;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: rgba(83, 255, 186, 0.25);
+  border-color: rgba(83, 255, 186, 0.5);
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+  transform: translateX(18px);
+  background: var(--success);
 }
 
 .class-definition {

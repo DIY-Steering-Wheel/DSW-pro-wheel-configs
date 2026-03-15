@@ -1,0 +1,8 @@
+﻿{
+  "id": "encoder",
+  "title": "Encoder",
+  "icon": "bi-disc",
+  "definition_key": "encoder",
+  "clsname_match": ["encoder", "enc"],
+  "requires_active": true
+}

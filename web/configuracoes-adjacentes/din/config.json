@@ -1,0 +1,7 @@
+﻿{
+  "id": "din",
+  "title": "DIN (Digital)",
+  "icon": "bi-toggle-on",
+  "clsname_match": ["button", "din", "dpin"],
+  "requires_active": true
+}
