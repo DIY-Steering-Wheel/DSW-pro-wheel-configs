@@ -3,6 +3,7 @@
   "title": "Encoder",
   "icon": "bi-disc",
   "definition_key": "encoder",
+  "definition_match": ["abn"],
   "clsname_match": ["encoder", "enc"],
   "requires_active": true
 }

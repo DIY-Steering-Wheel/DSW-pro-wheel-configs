@@ -32,6 +32,7 @@ class SerialBackend:
     def __init__(self):
         self._serial: Optional[serial.Serial] = None
         self._lock = threading.Lock()
+        self._request_lock = threading.Lock()
         self._reader: Optional[threading.Thread] = None
         self._running = False
         self._buffer = ""
@@ -109,6 +110,10 @@ class SerialBackend:
         if not self.is_connected():
             return None
 
+        if not self._request_lock.acquire(timeout=timeout):
+            SERIAL_LOG.error("REQ_LOCK_TIMEOUT %s.%s", cls, cmd)
+            return None
+
         result = {"value": None}
         evt = threading.Event()
 
@@ -125,11 +130,14 @@ class SerialBackend:
             payload = f"{cls}.{instance}.{cmd}{typechar}{adr};"
         self.send_raw(payload)
 
-        evt.wait(timeout)
-        if not evt.is_set() and cb in self._callbacks:
-            self._callbacks.remove(cb)
-            SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
-        return result["value"]
+        try:
+            evt.wait(timeout)
+            if not evt.is_set() and cb in self._callbacks:
+                self._callbacks.remove(cb)
+                SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
+            return result["value"]
+        finally:
+            self._request_lock.release()
 
     def send_value(self, cls: str, cmd: str, value: int, instance: int = 0, adr: Optional[int] = None) -> None:
         if not self.is_connected():
@@ -205,6 +213,7 @@ class SerialBackend:
                 class_id = int(class_id)
             except ValueError:
                 continue
+            name = (name or "").strip()
             classes.append(
                 {
                     "id": class_id,
@@ -259,14 +268,38 @@ class SerialBackend:
             except ValueError:
                 return None
 
+        def _resolve_current(raw: Optional[str], classes: List[Dict]) -> Optional[int]:
+            current = _to_int(raw)
+            if current is not None:
+                return current
+            if not raw or not classes:
+                return None
+            raw_norm = str(raw).strip().lower()
+            for entry in classes:
+                name = str(entry.get("name") or "").strip().lower()
+                if not name:
+                    continue
+                if raw_norm == name:
+                    return entry.get("id")
+            for entry in classes:
+                name = str(entry.get("name") or "").strip().lower()
+                if not name:
+                    continue
+                if raw_norm in name or name in raw_norm:
+                    return entry.get("id")
+            return None
+
+        driver_classes = self._parse_class_list(driver_list)
+        encoder_classes = self._parse_class_list(encoder_list)
+
         return {
             "driver": {
-                "current": _to_int(driver_current),
-                "classes": self._parse_class_list(driver_list),
+                "current": _resolve_current(driver_current, driver_classes),
+                "classes": driver_classes,
             },
             "encoder": {
-                "current": _to_int(encoder_current),
-                "classes": self._parse_class_list(encoder_list),
+                "current": _resolve_current(encoder_current, encoder_classes),
+                "classes": encoder_classes,
             },
             "shifter": {
                 "current": _to_int(shifter_current),
@@ -330,6 +363,42 @@ class SerialBackend:
         except ValueError:
             active_val = 0
         return {"ok": True, "active": active_val > 0, "rate": rate_val, "cfrate": cfrate_val}
+
+    @staticmethod
+    def _parse_modes_list(reply: Optional[str]) -> List[Dict]:
+        if not reply:
+            return []
+        raw = reply.replace("\n", ",")
+        parts = [p for p in raw.split(",") if p]
+        modes = []
+        for item in parts:
+            chunk = item.split(":")
+            if len(chunk) < 2:
+                continue
+            name = chunk[0].strip()
+            try:
+                mode_id = int(chunk[1])
+            except ValueError:
+                continue
+            modes.append({"id": mode_id, "name": name})
+        return modes
+
+    def get_joystick_rates(self) -> Dict:
+        if not self.is_connected():
+            return {"current": None, "modes": []}
+        modes_reply = self.request("main", "hidsendspd", typechar="!")
+        current_reply = self.request("main", "hidsendspd", typechar="?")
+        try:
+            current = int(current_reply) if current_reply is not None else None
+        except ValueError:
+            current = None
+        return {"current": current, "modes": self._parse_modes_list(modes_reply)}
+
+    def set_joystick_rate(self, rate_id: int) -> bool:
+        if not self.is_connected():
+            return False
+        self.send_value("main", "hidsendspd", value=int(rate_id), instance=0)
+        return True
 
     def apply_class_definitions(self, payload: Dict, axis: int = 0) -> bool:
         if not self.is_connected():
@@ -451,6 +520,8 @@ class SerialBackend:
 
 class ProfileStore:
     RELEASE = 2
+    FLASH_PROFILE = "Flash profile"
+    NONE_PROFILE = "None"
 
     def __init__(self):
         self._profiles_path = os.path.join(os.getcwd(), "profiles.json")
@@ -465,10 +536,18 @@ class ProfileStore:
         else:
             data = {
                 "release": self.RELEASE,
-                "global": {"current_profile": "None"},
-                "profiles": [{"name": "None", "data": []}],
+                "global": {"current_profile": self.NONE_PROFILE},
+                "profiles": [
+                    {"name": self.NONE_PROFILE, "data": []},
+                    {"name": self.FLASH_PROFILE, "data": []},
+                ],
             }
             self._write(data)
+        names = {p.get("name") for p in data.get("profiles", []) if isinstance(p, dict)}
+        if self.NONE_PROFILE not in names:
+            data["profiles"].append({"name": self.NONE_PROFILE, "data": []})
+        if self.FLASH_PROFILE not in names:
+            data["profiles"].append({"name": self.FLASH_PROFILE, "data": []})
         if data.get("release", 0) < self.RELEASE:
             data["release"] = self.RELEASE
             self._write(data)
@@ -485,10 +564,10 @@ class ProfileStore:
             json.dump(data, fh, indent=2)
 
     def list_profiles(self) -> List[str]:
-        return [p["name"] for p in self._profiles.get("profiles", [])]
+        return [p["name"] for p in self._profiles.get("profiles", []) if isinstance(p, dict) and p.get("name")]
 
     def get_current_profile(self) -> str:
-        return self._profiles.get("global", {}).get("current_profile", "None")
+        return self._profiles.get("global", {}).get("current_profile", self.NONE_PROFILE)
 
     def select_profile(self, name: str) -> bool:
         if name not in self.list_profiles():
@@ -500,12 +579,16 @@ class ProfileStore:
     def create_profile(self, name: str) -> bool:
         if not name or name in self.list_profiles():
             return False
+        if name in (self.NONE_PROFILE, self.FLASH_PROFILE):
+            return False
         self._profiles["profiles"].append({"name": name, "data": []})
         self._write(self._profiles)
         return True
 
     def rename_profile(self, old: str, new: str) -> bool:
-        if old == "None" or not new or new in self.list_profiles():
+        if old in (self.NONE_PROFILE, self.FLASH_PROFILE) or not new or new in self.list_profiles():
+            return False
+        if new in (self.NONE_PROFILE, self.FLASH_PROFILE):
             return False
         for entry in self._profiles["profiles"]:
             if entry["name"] == old:
@@ -517,11 +600,11 @@ class ProfileStore:
         return False
 
     def delete_profile(self, name: str) -> bool:
-        if name == "None":
+        if name in (self.NONE_PROFILE, self.FLASH_PROFILE):
             return False
         self._profiles["profiles"] = [p for p in self._profiles["profiles"] if p["name"] != name]
         if self.get_current_profile() == name:
-            self._profiles["global"]["current_profile"] = "None"
+            self._profiles["global"]["current_profile"] = self.NONE_PROFILE
         self._write(self._profiles)
         return True
 

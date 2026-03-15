@@ -11,9 +11,11 @@ let classDefinitions = {
   encoder: { current: null, classes: [] },
   shifter: { current: null, modes: [] },
 };
+let joystickRates = { current: null, modes: [] };
 let lastStatus = null;
 let terminalLog = [];
 let errorsList = [];
+let profilesCache = { profiles: [], current: "None" };
 
 const fallbackMenu = [
   { key: "dashboard", label: "Painel", icon: "bi-grid-1x2" },
@@ -30,6 +32,12 @@ const SOCIAL_LINKS = {
   site: "",
 };
 
+const ABOUT_INFO = {
+  base: "Baseado no firmware DSW Pro Wheel e protocolo serial da controladora.",
+  credits: ["Equipe DSW Pro Wheel", "Contribuidores do projeto"],
+  openffboard: "https://github.com/Ultrawipf/OpenFFBoard",
+};
+
 const VIEW_IDS = {
   dashboard: "view-dashboard",
   "monitoring-status": "view-monitoring-status",
@@ -40,6 +48,7 @@ const EFFECTS_CLASS_ID = 0xA02;
 let monitoringTimer = null;
 let monitoringAxis = 0;
 let ffbTimer = null;
+let ffbPollingInFlight = false;
 
 function isMonitoringView(viewKey) {
   return viewKey === "monitoring-status" || viewKey === "monitoring-live";
@@ -68,6 +77,12 @@ function setSaveStatus(message) {
   if (el) {
     el.textContent = message || "Nenhuma acao recente.";
   }
+}
+
+function addSystemLog(message, level = "info") {
+  const timestamp = new Date().toLocaleTimeString();
+  terminalLog.push({ message, timestamp, isError: level === "error" });
+  updateTerminalDisplay();
 }
 
 function updateFooterConnection(status) {
@@ -125,50 +140,139 @@ function ensureAdjacentViews() {
 
 function isConfigVisible(cfg) {
   if (!cfg) return false;
+  
+  // Se requer_active é false, sempre mostra
   if (cfg.requires_active === false) return true;
+  
+  // ESTRATÉGIA 1: Verificar clsname_match contra activeClasses (funciona para classes ativas instantaneamente)
+  const clsnameMatches = Array.isArray(cfg.clsname_match)
+    ? cfg.clsname_match
+    : cfg.clsname_match
+      ? [cfg.clsname_match]
+      : [];
+  
+  if (clsnameMatches.length > 0) {
+    const hasActiveMatch = activeClasses.some((entry) => {
+      const clsname = String(entry.clsname || entry.name || entry.label || "").toLowerCase();
+      return clsnameMatches.some((needle) => clsname.includes(String(needle).toLowerCase()));
+    });
+    
+    if (hasActiveMatch) {
+      console.debug(`[isConfigVisible] ${cfg.id}: matched active class via clsname_match`);
+      return true;
+    }
+  }
+  
+  // ESTRATÉGIA 2: Se tem definition_key, verifica a definição selecionada
   if (cfg.definition_key) {
     const def = classDefinitions?.[cfg.definition_key];
+    
+    // Se não tem def ou current é null, não está disponível
     if (!def || def.current === null || def.current === undefined) {
+      console.debug(`[isConfigVisible] ${cfg.id}: definition_key="${cfg.definition_key}" não têm valor atual`);
       return false;
     }
+    
+    // Se não tem definition_match, e tem um current, assume que está visível
     const matchers = Array.isArray(cfg.definition_match)
       ? cfg.definition_match
       : cfg.definition_match
         ? [cfg.definition_match]
         : [];
-    if (matchers.length > 0 && Array.isArray(def.classes)) {
-      const current = def.classes.find((entry) => entry.id === def.current);
-      const name = String(current?.name || "").toLowerCase();
-      return matchers.some((needle) => name.includes(String(needle).toLowerCase()));
+    
+    if (matchers.length === 0) {
+      console.debug(`[isConfigVisible] ${cfg.id}: sem definition_match, mas tem current`);
+      return true;
     }
-    return true;
+
+    if (cfg.definition_key === "encoder") {
+      console.debug(`[isConfigVisible] ${cfg.id}: encoder com current definido, exibindo`);
+      return true;
+    }
+    
+    const currentId = def.current;
+    const idMatches = matchers.some(
+      (needle) => String(needle).toLowerCase() === String(currentId).toLowerCase()
+    );
+    if (idMatches) {
+      console.debug(`[isConfigVisible] ${cfg.id}: matched current id "${currentId}"`);
+      return true;
+    }
+    
+    // Se tem matchers, verifica se o nome atual bate
+    const hasClassList = Array.isArray(def.classes) && def.classes.length > 0;
+    if (hasClassList) {
+      const current = def.classes.find((entry) => entry.id === def.current);
+      if (current) {
+        const name = String(current?.name || "").toLowerCase();
+        const matches = matchers.some((needle) => name.includes(String(needle).toLowerCase()));
+        if (matches) {
+          console.debug(`[isConfigVisible] ${cfg.id}: matched driver "${name}"`);
+        } else {
+          console.debug(`[isConfigVisible] ${cfg.id}: driver "${name}" não bate com matchers`, matchers);
+        }
+        return matches;
+      }
+    }
+    
+    // Fallback: if has definition_match but can't resolve, still check activeClasses
+    console.debug(`[isConfigVisible] ${cfg.id}: sem nome resolvido via definition, checando activeClasses`);
+    return false;
   }
+  
+  // Se tem class_id, verifica se está na lista de IDs ativos
   if (cfg.class_id !== null && cfg.class_id !== undefined) {
-    return activeClassIds.has(Number(cfg.class_id));
+    const isVisible = activeClassIds.has(Number(cfg.class_id));
+    if (!isVisible) {
+      console.debug(`[isConfigVisible] ${cfg.id}: class_id=${cfg.class_id} não está ativo`);
+    }
+    return isVisible;
   }
-  const matches = Array.isArray(cfg.clsname_match)
-    ? cfg.clsname_match
-    : cfg.clsname_match
-      ? [cfg.clsname_match]
-      : [];
-  if (matches.length === 0) {
+  
+  // Fallback: sem nenhuma regra de matching
+  if (clsnameMatches.length === 0) {
+    console.debug(`[isConfigVisible] ${cfg.id}: sem regras de matching, considerando visível`);
     return true;
   }
-  return activeClasses.some((entry) => {
-    const clsname = String(entry.clsname || entry.name || entry.label || "").toLowerCase();
-    return matches.some((needle) => clsname.includes(String(needle).toLowerCase()));
-  });
+  
+  return false;
 }
 
 function renderCalibrationTree() {
   const container = document.getElementById("adjacentTree");
   if (!container) return;
   container.innerHTML = "";
+  
+  console.debug("[renderCalibrationTree] Total configs:", adjacentConfigs.length);
+  console.debug("[renderCalibrationTree] adjacentConfigs:", adjacentConfigs);
+  console.debug("[renderCalibrationTree] classDefinitions:", classDefinitions);
+  console.debug("[renderCalibrationTree] activeClasses:", activeClasses);
+  console.debug("[renderCalibrationTree] activeClassIds:", Array.from(activeClassIds));
+  
   const visible = adjacentConfigs.filter(isConfigVisible);
-  if (visible.length === 0) {
+  
+  console.debug("[renderCalibrationTree] Visible configs:", visible.length, visible.map((c) => c.id));
+  
+  let renderList = visible;
+  if (renderList.length === 0 && adjacentConfigs.length > 0) {
+    const definitionFallback = adjacentConfigs.filter((cfg) => {
+      if (!cfg.definition_key) return false;
+      const def = classDefinitions?.[cfg.definition_key];
+      return def && def.current !== null && def.current !== undefined;
+    });
+    if (definitionFallback.length > 0) {
+      console.debug("[renderCalibrationTree] Fallback: showing definition-based configs", definitionFallback.map((c) => c.id));
+      renderList = definitionFallback;
+    } else if (lastStatus?.connected) {
+      console.debug("[renderCalibrationTree] Fallback: showing all adjacent configs");
+      renderList = adjacentConfigs;
+    }
+  }
+  
+  if (renderList.length === 0) {
     return;
   }
-  visible.forEach((cfg) => {
+  renderList.forEach((cfg) => {
     const item = document.createElement("div");
     item.className = "tree-item";
     item.setAttribute("data-view", `adjacent:${cfg.id}`);
@@ -372,7 +476,7 @@ function renderClasses() {
         return `<option value="${entry.id}" ${disabled}>${optionLabel(entry)}</option>`;
       })
       .join("");
-    const emptyOption = `<option value="">Nenhuma</option>`;
+    const emptyOption = `<option value="">None</option>`;
 
     item.innerHTML = `
       <div class="class-name">
@@ -437,6 +541,7 @@ function renderProfiles(data) {
   if (!select) {
     const profiles = data?.profiles || [];
     const current = data?.current;
+    profilesCache = { profiles, current };
     if (!profiles.includes(selectedProfile)) {
       selectedProfile = current || profiles[0] || "None";
     }
@@ -444,8 +549,12 @@ function renderProfiles(data) {
   }
   
   select.innerHTML = "";
-  const profiles = data?.profiles || [];
+  let profiles = data?.profiles || [];
   const current = data?.current;
+  profilesCache = { profiles, current };
+  if (profiles.includes("Flash profile")) {
+    profiles = profiles.filter((name) => name !== "None");
+  }
   if (!profiles.includes(selectedProfile)) {
     selectedProfile = current || profiles[0] || "None";
   }
@@ -472,6 +581,20 @@ function updateStatus(status) {
   }
   if (statusText) {
     statusText.textContent = connected ? `Conectado com ${status.port || "--"}` : "Desconectado";
+  }
+  
+  const boardDot = document.getElementById("boardDot");
+  const boardState = document.getElementById("boardState");
+  if (boardDot) {
+    boardDot.classList.toggle("connected", connected);
+  }
+  if (boardState) {
+    const hwLabel = status?.hw ? `Placa: ${status.hw}` : "Placa: --";
+    let supportLabel = "";
+    if (connected) {
+      supportLabel = status?.supported === true ? "Oficial" : status?.supported === false ? "Nao oficial" : "";
+    }
+    boardState.textContent = supportLabel ? `${hwLabel} (${supportLabel})` : hwLabel;
   }
   
   updateFooterConnection(status);
@@ -527,6 +650,21 @@ function updateMonitoringLock(connected) {
   } else if (isMonitoringView(currentViewKey)) {
     startMonitoringPolling();
   }
+  
+  // Update hardware buttons state
+  updateHardwareButtonsState(connected);
+}
+
+function updateHardwareButtonsState(connected) {
+  const hwButtons = ["sidebarSaveFlash", "sidebarReboot", "sidebarFormat"];
+  hwButtons.forEach((btnId) => {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      btn.disabled = !connected;
+      btn.style.opacity = connected ? "1" : "0.5";
+      btn.style.cursor = connected ? "pointer" : "not-allowed";
+    }
+  });
 }
 
 function startMonitoringPolling() {
@@ -565,9 +703,14 @@ function startFfbPolling() {
     if (!window.pywebview?.api || !lastStatus?.connected) {
       return;
     }
+    if (ffbPollingInFlight) {
+      return;
+    }
+    ffbPollingInFlight = true;
     const data = await window.pywebview.api.get_ffb_status();
     const el = document.getElementById("ffbStatus");
     const dot = document.getElementById("ffbDot");
+    ffbPollingInFlight = false;
     if (!el) return;
     if (!data?.ok) {
       el.textContent = "0 Hz";
@@ -581,17 +724,33 @@ function startFfbPolling() {
     }
     const isActive = data.active && data.rate > 0;
     if (dot) dot.classList.toggle("active", isActive);
-  }, 1000);
+  }, 2500);
 }
 
 function stopFfbPolling() {
   if (!ffbTimer) return;
   clearInterval(ffbTimer);
   ffbTimer = null;
+  ffbPollingInFlight = false;
   const el = document.getElementById("ffbStatus");
   if (el) el.textContent = "0 Hz";
   const dot = document.getElementById("ffbDot");
   if (dot) dot.classList.remove("active");
+}
+
+async function withPollingPaused(action) {
+  const hadFfb = Boolean(ffbTimer);
+  const hadMonitoring = Boolean(monitoringTimer);
+  stopFfbPolling();
+  stopMonitoringPolling();
+  try {
+    await action();
+  } finally {
+    if (lastStatus?.connected) {
+      if (hadFfb) startFfbPolling();
+      if (hadMonitoring && isMonitoringView(currentViewKey)) startMonitoringPolling();
+    }
+  }
 }
 
 function renderMainClasses(data) {
@@ -617,6 +776,31 @@ function renderMainClasses(data) {
     opt.textContent = entry.name;
     opt.disabled = !entry.creatable && entry.id !== mainClassData.current;
     if (entry.id === mainClassData.current) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  });
+}
+
+function renderJoystickRates(data) {
+  joystickRates = data || { current: null, modes: [] };
+  const select = document.getElementById("joystickRateSelect");
+  if (!select) return;
+  select.innerHTML = "";
+  if (!joystickRates.modes || joystickRates.modes.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Sem taxas";
+    select.appendChild(opt);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  joystickRates.modes.forEach((entry) => {
+    const opt = document.createElement("option");
+    opt.value = entry.id;
+    opt.textContent = entry.name;
+    if (entry.id === joystickRates.current) {
       opt.selected = true;
     }
     select.appendChild(opt);
@@ -684,92 +868,39 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
   modalEl.style.display = "flex";
 }
 
-function showProfilesModal() {
+function showToolsModal() {
   const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
-  // Remove existing modals
-  document.querySelectorAll(".modal.fade").forEach((m) => {
-    const instance = hasBootstrap ? bootstrap.Modal.getInstance(m) : null;
-    if (m.id !== "profilesModal" && instance) {
-      instance.hide();
-      setTimeout(() => m.remove(), 300);
-    }
-  });
-
   const modalEl = document.createElement("div");
   modalEl.className = "modal fade";
   modalEl.tabIndex = -1;
-  modalEl.id = `profiles-modal-${Date.now()}`;
+  modalEl.id = `tools-modal-${Date.now()}`;
   modalEl.style.zIndex = "1060";
-  
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">
-            <i class="bi bi-collection"></i>
-            Gerenciar Perfis
+            <i class="bi bi-tools"></i>
+            Ferramentas de Flash
           </h5>
           <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="modal-section">
-            <label class="section-label">Perfil Ativo</label>
-            <div class="selector-row">
-              <select class="form-select-custom profiles-select"></select>
-              <button class="btn-outline profiles-apply" title="Selecionar">
-                <i class="bi bi-check2-circle"></i>
+            <label class="section-label">Acoes</label>
+            <div class="btn-grid-1">
+              <button class="btn-danger tools-format" title="Formatar flash">
+                <i class="bi bi-exclamation-triangle"></i>
+                Formatar Flash
               </button>
-            </div>
-          </div>
-
-          <div class="modal-divider"></div>
-
-          <div class="modal-section">
-            <label class="section-label">Ações</label>
-            <div class="btn-grid-2">
-              <button class="btn-outline profiles-save" title="Salvar do hardware">
-                <i class="bi bi-download"></i>
-                Salvar Hardware
+              <button class="btn-outline tools-dump-save" title="Salvar dump">
+                <i class="bi bi-cloud-arrow-down"></i>
+                Salvar Dump
               </button>
-              <button class="btn-outline profiles-apply-to-board" title="Aplicar ao hardware">
-                <i class="bi bi-check2-circle"></i>
-                Aplicar
-              </button>
-            </div>
-          </div>
-
-          <div class="modal-divider"></div>
-
-          <div class="modal-section">
-            <label class="section-label">Gerenciamento</label>
-            <div class="btn-grid-3">
-              <button class="btn-success profiles-create" title="Novo">
-                <i class="bi bi-plus-circle"></i>
-                Novo
-              </button>
-              <button class="btn-info profiles-rename" title="Renomear">
-                <i class="bi bi-pencil"></i>
-                Renomear
-              </button>
-              <button class="btn-danger profiles-delete" title="Excluir">
-                <i class="bi bi-trash"></i>
-                Excluir
-              </button>
-            </div>
-          </div>
-
-          <div class="modal-divider"></div>
-
-          <div class="modal-section">
-            <label class="section-label">Importar / Exportar</label>
-            <div class="btn-grid-2">
-              <button class="btn-ghost profiles-export" title="Exportar">
-                <i class="bi bi-box-arrow-up-right"></i>
-                Exportar
-              </button>
-              <button class="btn-ghost profiles-import" title="Importar">
-                <i class="bi bi-box-arrow-in-down"></i>
-                Importar
+              <button class="btn-outline tools-dump-load" title="Carregar dump">
+                <i class="bi bi-cloud-arrow-up"></i>
+                Carregar Dump
               </button>
             </div>
           </div>
@@ -787,38 +918,210 @@ function showProfilesModal() {
       modalEl.style.display = "none";
     });
   });
-  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
-    btn.addEventListener("click", () => modal && modal.hide());
+
+  modalEl.querySelector(".tools-format").addEventListener("click", async () => {
+    const result = await withPollingPaused(() => window.pywebview?.api?.format_flash());
+    if (result?.ok) {
+      setSaveStatus("Flash formatada.");
+      addSystemLog("Flash formatada");
+    } else {
+      setSaveStatus("Falha ao formatar flash.");
+      addSystemLog("Falha ao formatar flash", "error");
+    }
+  });
+  modalEl.querySelector(".tools-dump-save").addEventListener("click", async () => {
+    const result = await withPollingPaused(() => window.pywebview?.api?.save_flash_dump());
+    if (result?.ok) {
+      setSaveStatus(`Dump salvo (${result.count || 0} itens).`);
+      addSystemLog(`Dump salvo (${result.count || 0} itens)`);
+    } else {
+      setSaveStatus("Falha ao salvar dump.");
+      addSystemLog("Falha ao salvar dump", "error");
+    }
+  });
+  modalEl.querySelector(".tools-dump-load").addEventListener("click", async () => {
+    const result = await withPollingPaused(() => window.pywebview?.api?.load_flash_dump());
+    if (result?.ok) {
+      setSaveStatus(`Dump carregado (${result.count || 0} itens).`);
+      addSystemLog(`Dump carregado (${result.count || 0} itens)`);
+    } else {
+      setSaveStatus("Falha ao carregar dump.");
+      addSystemLog("Falha ao carregar dump", "error");
+    }
   });
 
-  // Atualizar select
-  const select = modalEl.querySelector(".profiles-select");
-  const profiles = classCatalog ? classCatalog.map((c) => c.label) : [];
-  select.innerHTML = profiles.map((name) => 
-    `<option value="${name}" ${name === selectedProfile ? "selected" : ""}>${name}</option>`
-  ).join("");
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
 
-  // Event listeners
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
+}
+
+function showProfilesModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
+  document.querySelectorAll(".modal.fade").forEach((m) => {
+    const instance = hasBootstrap ? bootstrap.Modal.getInstance(m) : null;
+    if (m.id !== "profilesModal" && instance) {
+      instance.hide();
+      setTimeout(() => m.remove(), 300);
+    }
+  });
+
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `profiles-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-collection"></i>
+            Perfis
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="profiles-layout">
+            <div class="profiles-panel">
+              <div class="section-label">Lista de Perfis</div>
+              <div class="profiles-list"></div>
+              <div class="profiles-actions-row">
+                <input class="profiles-input profiles-create-name" placeholder="Novo perfil..." />
+                <button class="btn-success profiles-create" title="Criar">
+                  <i class="bi bi-plus-circle"></i>
+                  Criar
+                </button>
+              </div>
+              <div class="profiles-actions-row">
+                <input class="profiles-input profiles-rename-name" placeholder="Renomear para..." />
+                <button class="btn-info profiles-rename" title="Renomear">
+                  <i class="bi bi-pencil"></i>
+                  Renomear
+                </button>
+              </div>
+            </div>
+
+            <div class="profiles-panel">
+              <div class="section-label">Perfil Ativo</div>
+              <div class="profiles-active" id="profilesActiveLabel">--</div>
+              <div class="btn-grid-1">
+                <button class="btn-outline profiles-activate" title="Ativar">
+                  <i class="bi bi-check2-circle"></i>
+                  Ativar
+                </button>
+                <button class="btn-outline profiles-save" title="Salvar do hardware">
+                  <i class="bi bi-download"></i>
+                  Salvar do Hardware
+                </button>
+                <button class="btn-outline profiles-apply-to-board" title="Aplicar ao hardware">
+                  <i class="bi bi-check2-circle"></i>
+                  Aplicar ao Hardware
+                </button>
+                <button class="btn-danger profiles-delete" title="Excluir">
+                  <i class="bi bi-trash"></i>
+                  Excluir
+                </button>
+              </div>
+
+              <div class="modal-divider"></div>
+
+              <div class="section-label">Importar / Exportar</div>
+              <div class="btn-grid-2">
+                <button class="btn-ghost profiles-export" title="Exportar">
+                  <i class="bi bi-box-arrow-up-right"></i>
+                  Exportar
+                </button>
+                <button class="btn-ghost profiles-import" title="Importar">
+                  <i class="bi bi-box-arrow-in-down"></i>
+                  Importar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    });
+  });
+
+  const listEl = modalEl.querySelector(".profiles-list");
+  const activeLabel = modalEl.querySelector("#profilesActiveLabel");
+
+  const buildList = () => {
+    let profiles = profilesCache?.profiles || [];
+    if (profiles.includes("Flash profile")) {
+      profiles = profiles.filter((name) => name !== "None");
+    }
+    if (profiles.length > 0 && !profiles.includes(selectedProfile)) {
+      selectedProfile = profilesCache?.current || profiles[0];
+    }
+    listEl.innerHTML = profiles.map((name) => {
+      const active = name === selectedProfile ? "active" : "";
+      return `<div class="profiles-item ${active}" data-name="${name}">${name}</div>`;
+    }).join("");
+    listEl.querySelectorAll(".profiles-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        selectedProfile = item.dataset.name;
+        buildList();
+      });
+    });
+    activeLabel.textContent = profilesCache?.current || "None";
+  };
+
+  buildList();
+
+  modalEl.querySelector(".profiles-create").addEventListener("click", async () => {
+    const input = modalEl.querySelector(".profiles-create-name");
+    const name = input.value.trim();
+    if (!name) return;
+    await createProfileWithName(name);
+    input.value = "";
+    await loadProfiles();
+    buildList();
+  });
+
+  modalEl.querySelector(".profiles-rename").addEventListener("click", async () => {
+    const input = modalEl.querySelector(".profiles-rename-name");
+    const name = input.value.trim();
+    if (!name) return;
+    await renameProfileWithName(name);
+    input.value = "";
+    await loadProfiles();
+    buildList();
+  });
+
+  modalEl.querySelector(".profiles-activate").addEventListener("click", async () => {
+    if (!selectedProfile || !window.pywebview?.api) return;
+    await window.pywebview.api.select_profile(selectedProfile);
+    await loadProfiles();
+    buildList();
+  });
+
+  modalEl.querySelector(".profiles-save").addEventListener("click", () => saveProfile());
+  modalEl.querySelector(".profiles-apply-to-board").addEventListener("click", () => applyProfile());
+  modalEl.querySelector(".profiles-delete").addEventListener("click", () => deleteProfile());
+  modalEl.querySelector(".profiles-export").addEventListener("click", () => exportProfile());
+  modalEl.querySelector(".profiles-import").addEventListener("click", () => importProfile());
+
   modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
     if (modal) modal.hide();
     modalEl.classList.remove("show");
     modalEl.style.display = "none";
   });
-  modalEl.querySelector(".profiles-apply").addEventListener("click", async () => {
-    selectedProfile = select.value;
-    if (window.pywebview?.api) {
-      await window.pywebview.api.select_profile(selectedProfile);
-    }
-  });
-
-  modalEl.querySelector(".profiles-save").addEventListener("click", () => saveProfile());
-  modalEl.querySelector(".profiles-apply-to-board").addEventListener("click", () => applyProfile());
-  modalEl.querySelector(".profiles-create").addEventListener("click", () => createProfile());
-  modalEl.querySelector(".profiles-rename").addEventListener("click", () => renameProfile());
-  modalEl.querySelector(".profiles-delete").addEventListener("click", () => deleteProfile());
-  modalEl.querySelector(".profiles-export").addEventListener("click", () => exportProfile());
-  modalEl.querySelector(".profiles-import").addEventListener("click", () => importProfile());
-
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
@@ -938,23 +1241,47 @@ function showErrorsModal() {
   modalEl.style.zIndex = "1060";
 
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">
             <i class="bi bi-exclamation-circle"></i>
-            Erros e Avisos
+            Logs e Erros
           </h5>
           <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="errors-list"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-outline errors-clear" title="Limpar">
-            <i class="bi bi-trash"></i>
-            Limpar
-          </button>
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="logs">Logs</button>
+            <button class="tab-btn" data-tab="errors">Erros</button>
+          </div>
+          <div class="tab-actions">
+            <button class="btn-outline tab-refresh" title="Atualizar">
+              <i class="bi bi-arrow-clockwise"></i>
+              Refresh
+            </button>
+            <button class="btn-outline tab-clear-logs" title="Limpar logs">
+              <i class="bi bi-journal-x"></i>
+              Limpar Logs
+            </button>
+            <button class="btn-outline tab-clear-errors" title="Limpar erros">
+              <i class="bi bi-trash"></i>
+              Limpar Erros
+            </button>
+          </div>
+          <div class="tab-panel active" data-tab-panel="logs">
+            <div class="logs-list"></div>
+          </div>
+          <div class="tab-panel" data-tab-panel="errors">
+            <div class="errors-table">
+              <div class="errors-row errors-header">
+                <div>Code</div>
+                <div>Level</div>
+                <div>Info</div>
+              </div>
+              <div class="errors-body"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -969,30 +1296,73 @@ function showErrorsModal() {
       modalEl.style.display = "none";
     });
   });
-  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
-    btn.addEventListener("click", () => modal && modal.hide());
+
+  const tabs = modalEl.querySelectorAll(".tab-btn");
+  const panels = modalEl.querySelectorAll(".tab-panel");
+  const logsList = modalEl.querySelector(".logs-list");
+  const errorsBody = modalEl.querySelector(".errors-body");
+
+  const renderLogs = () => {
+    logsList.innerHTML = terminalLog.map((entry) => {
+      const color = entry.isError ? "log-error" : "log-info";
+      return `<div class="log-line ${color}">[${entry.timestamp}] ${entry.message}</div>`;
+    }).join("");
+  };
+
+  const renderErrors = () => {
+    errorsBody.innerHTML = errorsList.map((err) => {
+      const levelClass = String(err.level || "").toLowerCase();
+      return `
+        <div class="errors-row ${levelClass}">
+          <div>${err.code || "--"}</div>
+          <div>${err.level || "--"}</div>
+          <div>${err.info || "--"}</div>
+        </div>
+      `;
+    }).join("");
+  };
+
+  const refreshErrors = async () => {
+    if (!window.pywebview?.api) return;
+    const data = await window.pywebview.api.get_errors();
+    if (data?.ok) {
+      errorsList = data.errors || [];
+    }
+    renderErrors();
+  };
+
+  tabs.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      panels.forEach((p) => {
+        p.classList.toggle("active", p.dataset.tabPanel === tab);
+      });
+    });
   });
-  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal && modal.hide());
 
-  const list = modalEl.querySelector(".errors-list");
-  list.innerHTML = errorsList.map((error) => `
-    <div class="error-item ${error.level}">
-      <div class="error-item-title">${error.title}</div>
-      <div class="error-item-message">${error.message}</div>
-      <div class="error-item-time">${error.timestamp}</div>
-    </div>
-  `).join("");
+  modalEl.querySelector(".tab-refresh").addEventListener("click", async () => {
+    await refreshErrors();
+    renderLogs();
+  });
 
-  modalEl.querySelector(".errors-clear").addEventListener("click", () => {
+  modalEl.querySelector(".tab-clear-logs").addEventListener("click", () => {
+    terminalLog = [];
+    renderLogs();
+  });
+
+  modalEl.querySelector(".tab-clear-errors").addEventListener("click", async () => {
+    if (window.pywebview?.api) {
+      await window.pywebview.api.clear_errors();
+    }
     errorsList = [];
-    list.innerHTML = "";
+    renderErrors();
   });
 
-  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
-    if (modal) modal.hide();
-    modalEl.classList.remove("show");
-    modalEl.style.display = "none";
-  });
+  renderLogs();
+  refreshErrors();
+
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
@@ -1094,6 +1464,15 @@ async function loadMainClasses() {
   renderMainClasses(data);
 }
 
+async function loadJoystickRates() {
+  if (!window.pywebview?.api || !lastStatus?.connected) {
+    renderJoystickRates({ current: null, modes: [] });
+    return;
+  }
+  const data = await window.pywebview.api.get_joystick_rates();
+  renderJoystickRates(data);
+}
+
 async function connectSelected() {
   if (!selectedPort || !window.pywebview?.api) return;
   const result = await window.pywebview.api.connect(selectedPort);
@@ -1108,6 +1487,7 @@ async function connectSelected() {
   await loadClassDefinitions();
   await loadActiveClasses();
   await loadMainClasses();
+  await loadJoystickRates();
 }
 
 async function disconnectCurrent() {
@@ -1126,23 +1506,44 @@ async function disconnectCurrent() {
   renderClasses();
   renderCalibrationTree();
   renderMainClasses({ current: null, classes: [] });
+  renderJoystickRates({ current: null, modes: [] });
+}
+
+async function applyMainSettings() {
+  if (!window.pywebview?.api || !lastStatus?.connected) return;
+  const selectClass = document.getElementById("mainClassSelect");
+  const selectRate = document.getElementById("joystickRateSelect");
+  const classId = selectClass ? parseInt(selectClass.value, 10) : NaN;
+  const rateId = selectRate ? parseInt(selectRate.value, 10) : NaN;
+  await withPollingPaused(async () => {
+    if (!Number.isNaN(rateId)) {
+      await window.pywebview.api.set_joystick_rate(rateId);
+    }
+    if (!Number.isNaN(classId) && classId !== mainClassData.current) {
+      await window.pywebview.api.set_main_class(classId);
+    }
+  });
+  await loadJoystickRates();
+  await loadMainClasses();
 }
 
 async function saveProfile() {
   if (!window.pywebview?.api || !selectedProfile) return;
   await window.pywebview.api.save_profile_from_board(selectedProfile);
   setSaveStatus(`Perfil "${selectedProfile}" salvo do hardware.`);
+  addSystemLog(`Perfil salvo do hardware: ${selectedProfile}`);
 }
 
 async function applyProfile() {
   if (!window.pywebview?.api || !selectedProfile) return;
   await window.pywebview.api.apply_profile_to_board(selectedProfile);
   setSaveStatus(`Perfil "${selectedProfile}" aplicado.`);
+  addSystemLog(`Perfil aplicado: ${selectedProfile}`);
 }
 
 async function saveToFlash() {
   if (!window.pywebview?.api || !lastStatus?.connected) return;
-  const result = await window.pywebview.api.save_to_flash();
+  const result = await withPollingPaused(() => window.pywebview.api.save_to_flash());
   if (result?.ok) {
     setSaveStatus("Configuracao salva na Flash.");
   } else {
@@ -1152,19 +1553,31 @@ async function saveToFlash() {
 
 async function createProfile() {
   const name = window.prompt("Nome do novo perfil:");
+  if (!name) return;
+  await createProfileWithName(name);
+}
+
+async function createProfileWithName(name) {
   if (!name || !window.pywebview?.api) return;
   const result = await window.pywebview.api.create_profile(name);
   selectedProfile = name;
   renderProfiles({ profiles: result.profiles, current: name });
+  addSystemLog(`Perfil criado: ${name}`);
 }
 
 async function renameProfile() {
   if (!selectedProfile || selectedProfile === "None") return;
   const name = window.prompt("Novo nome do perfil:", selectedProfile);
-  if (!name || !window.pywebview?.api) return;
+  if (!name) return;
+  await renameProfileWithName(name);
+}
+
+async function renameProfileWithName(name) {
+  if (!selectedProfile || !name || !window.pywebview?.api) return;
   const result = await window.pywebview.api.rename_profile(selectedProfile, name);
   selectedProfile = name;
   renderProfiles({ profiles: result.profiles, current: name });
+  addSystemLog(`Perfil renomeado para: ${name}`);
 }
 
 async function deleteProfile() {
@@ -1174,6 +1587,7 @@ async function deleteProfile() {
   const result = await window.pywebview.api.delete_profile(selectedProfile);
   selectedProfile = "None";
   renderProfiles({ profiles: result.profiles, current: "None" });
+  addSystemLog("Perfil excluido");
 }
 
 async function exportProfile() {
@@ -1199,7 +1613,7 @@ async function applyClassDefinitions() {
     encoder: classDefinitions?.encoder?.current ?? null,
     shifter: classDefinitions?.shifter?.current ?? null,
   };
-  const result = await window.pywebview.api.apply_class_definitions(payload);
+  const result = await withPollingPaused(() => window.pywebview.api.apply_class_definitions(payload));
   if (result?.ok) {
     setSaveStatus("Definicoes de classes enviadas.");
     await loadClassDefinitions();
@@ -1227,18 +1641,18 @@ function updateTerminalDisplay() {
 
 function addError(title, message, level = "error") {
   const timestamp = new Date().toLocaleTimeString();
-  errorsList.push({ title, message, level, timestamp });
+  errorsList.push({ code: title, level, info: message, timestamp });
   updateErrorsDisplay();
 }
 
 function updateErrorsDisplay() {
   const list = document.getElementById("errorsList");
   if (!list) return;
-  list.innerHTML = errorsList.map((error, index) => `
+  list.innerHTML = errorsList.map((error) => `
     <div class="error-item ${error.level}">
-      <div class="error-item-title">${error.title}</div>
-      <div class="error-item-message">${error.message}</div>
-      <div class="error-item-time">${error.timestamp}</div>
+      <div class="error-item-title">${error.code || "UI"}</div>
+      <div class="error-item-message">${error.info || ""}</div>
+      <div class="error-item-time">${error.timestamp || ""}</div>
     </div>
   `).join("");
 }
@@ -1273,6 +1687,7 @@ async function refreshAll() {
     await loadActiveClasses();
     setSaveStatus("Carregando... 7");
     await loadMainClasses();
+    await loadJoystickRates();
     setSaveStatus("Pronto");
   } catch (err) {
     setSaveStatus("Erro ao carregar");
@@ -1286,23 +1701,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateMonitoringLock(false);
   stopFfbPolling();
 
-  const discordLink = document.getElementById("discordLink");
-  if (discordLink) {
+  const footerDiscord = document.getElementById("footerDiscord");
+  const footerSite = document.getElementById("footerSite");
+  const footerAbout = document.getElementById("footerAbout");
+
+  if (footerDiscord) {
     if (SOCIAL_LINKS.discord) {
-      discordLink.href = SOCIAL_LINKS.discord;
+      footerDiscord.addEventListener("click", () => window.open(SOCIAL_LINKS.discord, "_blank", "noopener"));
     } else {
-      discordLink.classList.add("disabled");
+      footerDiscord.classList.add("disabled");
     }
   }
 
-  const siteLink = document.getElementById("siteLink");
-  if (siteLink) {
+  if (footerSite) {
     if (SOCIAL_LINKS.site) {
-      siteLink.href = SOCIAL_LINKS.site;
+      footerSite.addEventListener("click", () => window.open(SOCIAL_LINKS.site, "_blank", "noopener"));
     } else {
-      siteLink.classList.add("disabled");
+      footerSite.classList.add("disabled");
     }
   }
+
+  footerAbout?.addEventListener("click", showAboutModal);
 
   bindTreeHandlers();
 
@@ -1335,15 +1754,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Hardware actions from footer
   document.getElementById("sidebarSaveFlash")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;
-    showConfirmModal({
-      title: "Salvar na Flash",
-      body: "Deseja salvar as configuracoes atuais na Flash do hardware?",
-      confirmText: "Salvar",
-      confirmIcon: "bi-save2",
-      onConfirm: async () => {
-        await saveToFlash();
-      },
-    });
+    saveToFlash();
   });
 
   document.getElementById("sidebarReboot")?.addEventListener("click", () => {
@@ -1354,22 +1765,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       confirmText: "Reiniciar",
       confirmIcon: "bi-arrow-clockwise",
       onConfirm: async () => {
-        await window.pywebview?.api?.reboot();
+        await withPollingPaused(() => window.pywebview?.api?.reboot());
       },
     });
   });
 
   document.getElementById("sidebarFormat")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;
-    showConfirmModal({
-      title: "Formatar flash",
-      body: "Esta acao apaga configuracoes e reinicia o hardware. Deseja continuar?",
-      confirmText: "Formatar",
-      confirmIcon: "bi-exclamation-triangle",
-      onConfirm: async () => {
-        await window.pywebview?.api?.format_flash();
-      },
-    });
+    showToolsModal();
   });
 
   document.getElementById("rebootBtn")?.addEventListener("click", () => {
@@ -1380,39 +1783,98 @@ document.addEventListener("DOMContentLoaded", async () => {
       confirmText: "Reiniciar",
       confirmIcon: "bi-arrow-clockwise",
       onConfirm: async () => {
-        await window.pywebview?.api?.reboot();
+        await withPollingPaused(() => window.pywebview?.api?.reboot());
       },
     });
   });
 
   document.getElementById("formatBtn")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;
-    showConfirmModal({
-      title: "Formatar flash",
-      body: "Esta acao apaga configuracoes e reinicia o hardware. Deseja continuar?",
-      confirmText: "Formatar",
-      confirmIcon: "bi-exclamation-triangle",
-      onConfirm: async () => {
-        await window.pywebview?.api?.format_flash();
-      },
-    });
+    showToolsModal();
   });
 
   document.getElementById("mainClassApply")?.addEventListener("click", () => {
     if (!lastStatus?.connected) return;
     showConfirmModal({
       title: "Alterar main class",
-      body: "Alterar a main class reinicia o hardware. Deseja aplicar?",
+      body: "Aplicar main class e joystick rate? Alterar a main class reinicia o hardware.",
       confirmText: "Aplicar",
       confirmIcon: "bi-check2-circle",
       onConfirm: async () => {
-        const select = document.getElementById("mainClassSelect");
-        if (!select) return;
-        const value = parseInt(select.value, 10);
-        if (!Number.isNaN(value)) {
-          await window.pywebview?.api?.set_main_class(value);
-        }
+        await applyMainSettings();
       },
     });
   });
 });
+
+function showAboutModal() {
+  const hasBootstrap = typeof bootstrap !== "undefined" && bootstrap.Modal;
+  const modalEl = document.createElement("div");
+  modalEl.className = "modal fade";
+  modalEl.tabIndex = -1;
+  modalEl.id = `about-modal-${Date.now()}`;
+  modalEl.style.zIndex = "1060";
+
+  const credits = ABOUT_INFO.credits.map((item) => `<li>${item}</li>`).join("");
+  const discordLink = SOCIAL_LINKS.discord
+    ? `<a href="${SOCIAL_LINKS.discord}" target="_blank" rel="noopener">Discord</a>`
+    : `<span>Discord (nao configurado)</span>`;
+  const siteLink = SOCIAL_LINKS.site
+    ? `<a href="${SOCIAL_LINKS.site}" target="_blank" rel="noopener">Site</a>`
+    : `<span>Site (nao configurado)</span>`;
+  const openffLink = ABOUT_INFO.openffboard
+    ? `<a href="${ABOUT_INFO.openffboard}" target="_blank" rel="noopener">OpenFFBoard</a>`
+    : `<span>OpenFFBoard (nao configurado)</span>`;
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-info-circle"></i>
+            About
+          </h5>
+          <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <div class="section-label">Base</div>
+            <div>${ABOUT_INFO.base}</div>
+          </div>
+          <div class="modal-divider"></div>
+          <div class="modal-section">
+            <div class="section-label">Creditos</div>
+            <ul class="about-list">${credits}</ul>
+          </div>
+          <div class="modal-divider"></div>
+          <div class="modal-section">
+            <div class="section-label">Links</div>
+            <div class="about-links">
+              ${discordLink}
+              ${siteLink}
+              <div>Fork do ${openffLink}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  const modal = hasBootstrap ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) modal.hide();
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    });
+  });
+  modalEl.querySelector(".modal-close-btn")?.addEventListener("click", () => modal && modal.hide());
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  if (modal) modal.show();
+  modalEl.classList.add("show");
+  modalEl.style.display = "flex";
+}

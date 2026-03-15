@@ -49,13 +49,22 @@
               <div id="adjacentTree" class="tree-group"></div>
             </div>
           </div>
-          <!-- Painel de Conexão -->
-          <div class="sidebar-section">
+        </div>
+
+        <div class="sidebar-footer">
+          <!-- Painel de Hardware Status - Movido para Footer -->
+          <div class="sidebar-section hardware-section">
             <div class="section-header">Hardware</div>
             <div class="connection-status">
               <div class="status-indicator">
                 <span class="status-dot" id="connectionDot"></span>
                 <span class="status-text" id="connectionState">Desconectado</span>
+              </div>
+            </div>
+            <div class="connection-status hardware-status">
+              <div class="status-indicator">
+                <span class="status-dot" id="boardDot"></span>
+                <span class="status-text" id="boardState">Placa: --</span>
               </div>
             </div>
             <div class="connection-status hardware-status">
@@ -66,10 +75,17 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="sidebar-footer">
-          <small class="text-muted">DSW Pro v1.0</small>
+          <div class="sidebar-links icon-row">
+            <button class="sidebar-link-btn icon-only" id="footerDiscord" type="button" title="Discord" aria-label="Discord">
+              <i class="bi bi-chat-dots"></i>
+            </button>
+            <button class="sidebar-link-btn icon-only" id="footerSite" type="button" title="Site" aria-label="Site">
+              <i class="bi bi-globe"></i>
+            </button>
+            <button class="sidebar-link-btn icon-only" id="footerAbout" type="button" title="About" aria-label="About">
+              <i class="bi bi-lightning-charge"></i>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -82,16 +98,6 @@
             <span id="topbarTitle">Painel</span>
           </div>
           <div class="topbar-spacer"></div>
-          <div class="topbar-actions">
-            <a class="topbar-link" id="discordLink" href="#" target="_blank" rel="noopener">
-              <i class="bi bi-chat-dots"></i>
-              Discord
-            </a>
-            <a class="topbar-link" id="siteLink" href="#" target="_blank" rel="noopener">
-              <i class="bi bi-globe"></i>
-              Site
-            </a>
-          </div>
         </header>
 
         <!-- CONTEÚDO PRINCIPAL -->
@@ -156,8 +162,11 @@
                 <span>Main Class</span>
               </div>
               <div class="card-body">
+                <label class="mainclass-label" for="mainClassSelect">Main class</label>
                 <select id="mainClassSelect" class="form-select-custom"></select>
-                <button id="mainClassApply" class="btn-primary-sm" style="width: 100%; margin-top: 8px;">
+                <label class="mainclass-label" for="joystickRateSelect">Joystick rate</label>
+                <select id="joystickRateSelect" class="form-select-custom"></select>
+                <button id="mainClassApply" class="btn-primary-sm" style="width: 100%; margin-top: 10px;">
                   <i class="bi bi-check2-circle"></i>
                   Aplicar
                 </button>
