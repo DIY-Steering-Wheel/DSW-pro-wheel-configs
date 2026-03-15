@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, List
 
 import webview
@@ -29,6 +30,8 @@ class Api:
 
     def connect(self, port_name: str) -> Dict:
         ok = self._serial.connect(port_name)
+        if not ok:
+            return {"ok": False, "status": self.get_status(), "error": "connect_failed"}
         return {"ok": ok, "status": self.get_status()}
 
     def disconnect(self) -> Dict:
@@ -58,6 +61,15 @@ class Api:
 
     def apply_class_definitions(self, payload: Dict) -> Dict:
         return {"ok": self._serial.apply_class_definitions(payload)}
+
+    def get_effects_status(self, axis: int = 0) -> Dict:
+        return self._serial.get_effects_status(axis=axis)
+
+    def get_effects_live_forces(self, axis: int = 0) -> Dict:
+        return self._serial.get_effects_live_forces(axis=axis)
+
+    def get_ffb_status(self) -> Dict:
+        return self._serial.get_ffb_status()
 
     def set_main_class(self, class_id: int) -> Dict:
         return {"ok": self._serial.set_main_class(class_id)}
@@ -201,6 +213,10 @@ class Api:
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     web_dir = os.path.join(os.path.dirname(__file__), "web")
     index_path = os.path.join(web_dir, "index.html")
     api = Api()

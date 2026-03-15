@@ -1,0 +1,80 @@
+:root {
+  --monitoring-accent: rgba(63, 163, 255, 0.18);
+}
+
+.analysis-card .card-header {
+  background: rgba(12, 18, 34, 0.7);
+}
+
+.analysis-placeholder {
+  background: rgba(10, 16, 32, 0.4);
+  border: 1px dashed rgba(90, 126, 190, 0.35);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.effect-live-canvas {
+  width: 100%;
+  height: 320px;
+  display: block;
+  border-radius: 12px;
+  background: rgba(6, 10, 18, 0.9);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+}
+
+.effect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.effect-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(14, 22, 44, 0.75);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+}
+
+.effect-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  gap: 8px;
+}
+
+.effect-active {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 123, 123, 0.7);
+}
+
+.effect-active.on {
+  background: rgba(83, 255, 186, 0.9);
+}
+
+.effect-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.effect-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(9, 15, 28, 0.8);
+  overflow: hidden;
+}
+
+.effect-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(63, 163, 255, 0.2), rgba(63, 163, 255, 0.8));
+}

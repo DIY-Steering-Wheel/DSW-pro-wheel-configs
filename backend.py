@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -13,6 +14,7 @@ from ui_registry import build_tabs_from_lsactive
 
 
 OFFICIAL_VID_PID: List[Tuple[int, int]] = [(0x1209, 0xFFB0)]
+SERIAL_LOG = logging.getLogger("dsw.serial")
 
 
 @dataclass
@@ -66,20 +68,24 @@ class SerialBackend:
                 self._reader = threading.Thread(target=self._read_loop, daemon=True)
                 self._reader.start()
                 self._last_port_info = {"device": port_name}
+                SERIAL_LOG.info("CONNECT %s", port_name)
                 return True
             except serial.SerialException:
                 self._serial = None
                 self._running = False
+                SERIAL_LOG.error("CONNECT_FAIL %s", port_name)
                 return False
 
     def disconnect(self) -> None:
         with self._lock:
             self._running = False
             if self._serial:
+                port = self._serial.port
                 try:
                     self._serial.close()
                 finally:
                     self._serial = None
+                    SERIAL_LOG.info("DISCONNECT %s", port)
 
     def is_connected(self) -> bool:
         return self._serial is not None and self._serial.is_open
@@ -88,6 +94,7 @@ class SerialBackend:
         if not self.is_connected():
             return
         with self._lock:
+            SERIAL_LOG.info("TX %s", payload.strip())
             self._serial.write(payload.encode("utf-8"))
 
     def request(
@@ -97,6 +104,7 @@ class SerialBackend:
         instance: int = 0,
         adr: Optional[int] = None,
         typechar: str = "?",
+        timeout: float = 1.5,
     ) -> Optional[str]:
         if not self.is_connected():
             return None
@@ -117,9 +125,10 @@ class SerialBackend:
             payload = f"{cls}.{instance}.{cmd}{typechar}{adr};"
         self.send_raw(payload)
 
-        evt.wait(1.5)
+        evt.wait(timeout)
         if not evt.is_set() and cb in self._callbacks:
             self._callbacks.remove(cb)
+            SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
         return result["value"]
 
     def send_value(self, cls: str, cmd: str, value: int, instance: int = 0, adr: Optional[int] = None) -> None:
@@ -265,6 +274,63 @@ class SerialBackend:
             },
         }
 
+    def get_effects_status(self, axis: int = 0) -> Dict:
+        if not self.is_connected():
+            return {"ok": False, "effects": [], "active_mask": 0}
+        details = self.request("fx", "effectsDetails", adr=axis, typechar="?", timeout=2.5)
+        active = self.request("fx", "effects", typechar="?", timeout=2.5)
+        effects: List[Dict] = []
+        if details:
+            try:
+                effects = json.loads("[" + details + "]")
+            except json.JSONDecodeError:
+                effects = []
+        try:
+            active_mask = int(active) if active is not None else 0
+        except ValueError:
+            active_mask = 0
+        return {"ok": True, "effects": effects, "active_mask": active_mask}
+
+    def get_effects_live_forces(self, axis: int = 0) -> Dict:
+        if not self.is_connected():
+            return {"ok": False, "forces": [], "effects": []}
+        data = self.request("fx", "effectsForces", adr=axis, typechar="?", timeout=2.5)
+        forces: List[int] = []
+        effects: List[int] = []
+        if data:
+            for line in data.split("\n"):
+                if not line:
+                    continue
+                parts = line.split(":")
+                if len(parts) < 2:
+                    continue
+                try:
+                    forces.append(int(parts[0]))
+                    effects.append(int(parts[1]))
+                except ValueError:
+                    continue
+        return {"ok": True, "forces": forces, "effects": effects}
+
+    def get_ffb_status(self) -> Dict:
+        if not self.is_connected():
+            return {"ok": False, "active": False, "rate": 0, "cfrate": 0}
+        rate = self.request("main", "hidrate", typechar="?", timeout=2.0)
+        cfrate = self.request("main", "cfrate", typechar="?", timeout=2.0)
+        active = self.request("main", "ffbactive", typechar="?", timeout=2.0)
+        try:
+            rate_val = int(rate) if rate is not None else 0
+        except ValueError:
+            rate_val = 0
+        try:
+            cfrate_val = int(cfrate) if cfrate is not None else 0
+        except ValueError:
+            cfrate_val = 0
+        try:
+            active_val = int(active) if active is not None else 0
+        except ValueError:
+            active_val = 0
+        return {"ok": True, "active": active_val > 0, "rate": rate_val, "cfrate": cfrate_val}
+
     def apply_class_definitions(self, payload: Dict, axis: int = 0) -> bool:
         if not self.is_connected():
             return False
@@ -356,6 +422,7 @@ class SerialBackend:
             try:
                 chunk = self._serial.read(512)
             except serial.SerialException:
+                SERIAL_LOG.error("READ_ERROR")
                 self.disconnect()
                 return
             if not chunk:
@@ -376,6 +443,7 @@ class SerialBackend:
                     continue
                 frame = self._buffer[start : end + 1]
                 self._buffer = self._buffer[end + 1 :]
+                SERIAL_LOG.info("RX %s", frame.strip())
                 parsed = parse_reply(frame)
                 if parsed:
                     self._dispatch(parsed)

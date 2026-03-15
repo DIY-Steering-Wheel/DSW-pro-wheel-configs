@@ -22,6 +22,22 @@ const fallbackMenu = [
   { key: "logs", label: "Logs", icon: "bi-journal-text" },
 ];
 
+const SOCIAL_LINKS = {
+  discord: "",
+  site: "",
+};
+
+const VIEW_IDS = {
+  dashboard: "view-dashboard",
+  "monitoring-status": "view-monitoring-status",
+  "monitoring-live": "view-monitoring-live",
+};
+
+const EFFECTS_CLASS_ID = 0xA02;
+let monitoringTimer = null;
+let monitoringAxis = 0;
+let ffbTimer = null;
+
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) {
@@ -61,6 +77,39 @@ function renderMenu(items) {
   });
 }
 
+function setTopbarTitle(title) {
+  const titleEl = document.getElementById("topbarTitle");
+  if (titleEl) titleEl.textContent = title || "Painel";
+}
+
+function activateTreeItemByView(viewKey) {
+  const tree = document.getElementById("calibrationTree");
+  if (!tree) return;
+  tree.querySelectorAll(".tree-item").forEach((node) => node.classList.remove("active"));
+  const target = tree.querySelector(`.tree-item[data-view="${viewKey}"]`);
+  target?.classList.add("active");
+}
+
+function setActiveView(viewKey, title) {
+  Object.values(VIEW_IDS).forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove("active");
+  });
+  const viewId = VIEW_IDS[viewKey];
+  const viewEl = viewId ? document.getElementById(viewId) : null;
+  if (viewEl) viewEl.classList.add("active");
+  setTopbarTitle(title);
+}
+
+function requestOpenMonitoring(viewKey, title) {
+  if (!lastStatus?.connected || !activeClassIds.has(EFFECTS_CLASS_ID)) {
+    setSaveStatus("Monitoramento indisponivel. Conecte e ative a classe de efeitos.");
+    return;
+  }
+  setActiveView(viewKey, title);
+  activateTreeItemByView(viewKey);
+}
+
 function renderActiveTabs() {
   const container = document.getElementById("activeTabs");
   if (!container) return;
@@ -93,6 +142,11 @@ function renderClasses() {
   if (!container) return;
 
   container.innerHTML = "";
+  if (!lastStatus?.connected) {
+    container.innerHTML = `<div style="grid-column: 1/-1; padding: 24px; text-align: center; color: var(--text-muted);">Conecte para listar classes</div>`;
+    if (countEl) countEl.textContent = "0";
+    return;
+  }
 
   const definitions = [
     {
@@ -261,6 +315,94 @@ function updateStatus(status) {
   
   setText("tempValue", status?.temp ? `${status.temp} °C` : "--");
   setText("connValue", connected ? "Conectado" : "--");
+  const hwPort = document.getElementById("hwPortStatus");
+  if (hwPort) hwPort.textContent = connected ? status?.port || "--" : "--";
+  updateMonitoringLock(connected);
+}
+
+function updateMonitoringLock(connected) {
+  const hasEffects = connected && activeClassIds && activeClassIds.has(EFFECTS_CLASS_ID);
+  if (connected) {
+    startFfbPolling();
+  } else {
+    stopFfbPolling();
+  }
+  const section = document.getElementById("monitoringSection");
+  if (section) {
+    section.style.display = hasEffects ? "" : "none";
+  }
+  const parentItem = document.querySelector(".tree-item.tree-parent");
+  const children = document.querySelector('.tree-children[data-parent="monitoring"]');
+  if (parentItem) {
+    parentItem.style.display = hasEffects ? "" : "none";
+  }
+  if (children) {
+    children.style.display = hasEffects ? "" : "none";
+  }
+  document.querySelectorAll(".monitoring-item").forEach((item) => {
+    item.classList.toggle("disabled", !hasEffects);
+  });
+  if (!hasEffects) {
+    stopMonitoringPolling();
+    setActiveView("dashboard", "Painel");
+    activateTreeItemByView("dashboard");
+  } else {
+    startMonitoringPolling();
+  }
+}
+
+function startMonitoringPolling() {
+  if (monitoringTimer) return;
+  monitoringTimer = setInterval(async () => {
+    if (!window.pywebview?.api || !lastStatus?.connected || !activeClassIds.has(EFFECTS_CLASS_ID)) {
+      return;
+    }
+    const status = await window.pywebview.api.get_effects_status(monitoringAxis);
+    if (status?.ok) {
+      window.DswMonitoring?.updateStatus(status);
+    }
+    const live = await window.pywebview.api.get_effects_live_forces(monitoringAxis);
+    if (live?.ok) {
+      live.active_mask = status?.active_mask || 0;
+      live.effects = status?.effects || [];
+      window.DswMonitoring?.updateLive(live);
+    }
+  }, 500);
+}
+
+function stopMonitoringPolling() {
+  if (!monitoringTimer) return;
+  clearInterval(monitoringTimer);
+  monitoringTimer = null;
+}
+
+function startFfbPolling() {
+  if (ffbTimer) return;
+  ffbTimer = setInterval(async () => {
+    if (!window.pywebview?.api || !lastStatus?.connected) {
+      return;
+    }
+    const data = await window.pywebview.api.get_ffb_status();
+    const el = document.getElementById("ffbStatus");
+    if (!el) return;
+    if (!data?.ok) {
+      el.textContent = "Inativo";
+      return;
+    }
+    if (data.active) {
+      el.textContent = `${data.rate} hz (CF ${data.cfrate} hz)`;
+    } else {
+      el.textContent = `${data.rate} hz`;
+    }
+  }, 1000);
+}
+
+function stopFfbPolling() {
+  if (!ffbTimer) return;
+  clearInterval(ffbTimer);
+  ffbTimer = null;
+  const el = document.getElementById("ffbStatus");
+  if (el) el.textContent = "Inativo";
 }
 
 function renderMainClasses(data) {
@@ -326,19 +468,39 @@ function showConfirmModal({ title, body, confirmText, confirmIcon, onConfirm }) 
     </div>
   `;
   document.body.appendChild(modalEl);
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) {
+        modal.hide();
+      } else {
+        modalEl.classList.remove("show");
+        modalEl.style.display = "none";
+      }
+    });
+  });
   const confirmBtn = modalEl.querySelector(".confirm-btn");
   confirmBtn?.addEventListener("click", async () => {
     confirmBtn.disabled = true;
     if (onConfirm) {
       await onConfirm();
     }
-    modal.hide();
+    if (modal) {
+      modal.hide();
+    } else {
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    }
   });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
-  modal.show();
+  if (modal) {
+    modal.show();
+  } else {
+    modalEl.classList.add("show");
+    modalEl.style.display = "flex";
+  }
 }
 
 function showProfilesModal() {
@@ -434,7 +596,20 @@ function showProfilesModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) {
+        modal.hide();
+      } else {
+        modalEl.classList.remove("show");
+        modalEl.style.display = "none";
+      }
+    });
+  });
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => modal.hide());
+  });
 
   // Atualizar select
   const select = modalEl.querySelector(".profiles-select");
@@ -444,7 +619,14 @@ function showProfilesModal() {
   ).join("");
 
   // Event listeners
-  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
+    if (modal) {
+      modal.hide();
+    } else {
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    }
+  });
   modalEl.querySelector(".profiles-apply").addEventListener("click", async () => {
     selectedProfile = select.value;
     if (window.pywebview?.api) {
@@ -464,7 +646,12 @@ function showProfilesModal() {
     modalEl.remove();
   });
 
-  modal.show();
+  if (modal) {
+    modal.show();
+  } else {
+    modalEl.classList.add("show");
+    modalEl.style.display = "flex";
+  }
 }
 
 function showTerminalModal() {
@@ -485,7 +672,7 @@ function showTerminalModal() {
           <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="terminal-output"></div>
+          <div class="terminal-output" id="terminalOutput"></div>
           <div class="terminal-input-group">
             <input type="text" class="terminal-input" placeholder="Digite comando..." autocomplete="off">
             <button class="btn-primary-sm terminal-send" title="Enviar">
@@ -498,7 +685,21 @@ function showTerminalModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) {
+        modal.hide();
+      } else {
+        modalEl.classList.remove("show");
+        modalEl.style.display = "none";
+      }
+    });
+  });
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => modal.hide());
+  });
+  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal.hide());
 
   // Atualizar display
   const output = modalEl.querySelector(".terminal-output");
@@ -542,12 +743,24 @@ function showTerminalModal() {
     if (e.key === "Enter") sendBtn.click();
   });
 
-  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
+    if (modal) {
+      modal.hide();
+    } else {
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    }
+  });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
 
-  modal.show();
+  if (modal) {
+    modal.show();
+  } else {
+    modalEl.classList.add("show");
+    modalEl.style.display = "flex";
+  }
 }
 
 function showErrorsModal() {
@@ -581,7 +794,21 @@ function showErrorsModal() {
   `;
 
   document.body.appendChild(modalEl);
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal ? new bootstrap.Modal(modalEl) : null;
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (modal) {
+        modal.hide();
+      } else {
+        modalEl.classList.remove("show");
+        modalEl.style.display = "none";
+      }
+    });
+  });
+  modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
+    btn.addEventListener("click", () => modal.hide());
+  });
+  modalEl.querySelector(".btn-close")?.addEventListener("click", () => modal.hide());
 
   const list = modalEl.querySelector(".errors-list");
   list.innerHTML = errorsList.map((error) => `
@@ -597,12 +824,24 @@ function showErrorsModal() {
     list.innerHTML = "";
   });
 
-  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => modal.hide());
+  modalEl.querySelector(".modal-close-btn").addEventListener("click", () => {
+    if (modal) {
+      modal.hide();
+    } else {
+      modalEl.classList.remove("show");
+      modalEl.style.display = "none";
+    }
+  });
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
 
-  modal.show();
+  if (modal) {
+    modal.show();
+  } else {
+    modalEl.classList.add("show");
+    modalEl.style.display = "flex";
+  }
 }
 
 async function loadPorts() {
@@ -674,6 +913,7 @@ async function loadActiveClasses() {
   }
   renderClasses();
   renderActiveTabs();
+  updateMonitoringLock(lastStatus?.connected);
 }
 
 async function loadMainClasses() {
@@ -707,6 +947,8 @@ async function disconnectCurrent() {
     encoder: { current: null, classes: [] },
     shifter: { current: null, modes: [] },
   };
+  setActiveView("dashboard", "Painel");
+  activateTreeItemByView("dashboard");
   renderClasses();
   renderMainClasses({ current: null, classes: [] });
 }
@@ -799,7 +1041,7 @@ function addTerminalLog(message, isError = false) {
 }
 
 function updateTerminalDisplay() {
-  const output = document.getElementById("terminalOutput");
+  const output = document.getElementById("terminalOutput") || document.querySelector(".terminal-output");
   if (!output) return;
   output.innerHTML = terminalLog.map((entry) => {
     const color = entry.isError ? "color: #ff7b7b;" : "color: #53ffba;";
@@ -860,6 +1102,47 @@ async function refreshAll() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await refreshAll();
+  window.DswMonitoring?.init?.();
+  updateMonitoringLock(false);
+  stopFfbPolling();
+
+  const discordLink = document.getElementById("discordLink");
+  if (discordLink) {
+    if (SOCIAL_LINKS.discord) {
+      discordLink.href = SOCIAL_LINKS.discord;
+    } else {
+      discordLink.classList.add("disabled");
+    }
+  }
+
+  const siteLink = document.getElementById("siteLink");
+  if (siteLink) {
+    if (SOCIAL_LINKS.site) {
+      siteLink.href = SOCIAL_LINKS.site;
+    } else {
+      siteLink.classList.add("disabled");
+    }
+  }
+
+  const tree = document.getElementById("calibrationTree");
+  const treeChildren = tree?.querySelector('.tree-children[data-parent="monitoring"]');
+  tree?.querySelectorAll(".tree-item").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (item.classList.contains("tree-parent")) {
+        treeChildren?.classList.toggle("collapsed");
+        return;
+      }
+      const viewKey = item.getAttribute("data-view");
+      const title = item.getAttribute("data-title") || "Painel";
+      if (viewKey === "monitoring-status" || viewKey === "monitoring-live") {
+        requestOpenMonitoring(viewKey, title);
+        return;
+      }
+      setActiveView(viewKey, title);
+      activateTreeItemByView(viewKey);
+    });
+  });
 
   // Connection and port management
   document.getElementById("refreshPorts")?.addEventListener("click", loadPorts);

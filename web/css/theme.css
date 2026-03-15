@@ -232,6 +232,32 @@ body.theme-blue {
   gap: 8px;
 }
 
+.topbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(30, 40, 70, 0.5);
+  transition: all 0.2s ease;
+}
+
+.topbar-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(63, 163, 255, 0.12);
+}
+
+.topbar-link.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .btn-icon {
   width: 36px;
   height: 36px;
@@ -285,6 +311,16 @@ body.theme-blue {
   gap: 24px;
 }
 
+.view-panel {
+  display: none;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.view-panel.active {
+  display: flex;
+}
+
 .status-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -296,6 +332,19 @@ body.theme-blue {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+.analysis-card {
+  background: rgba(12, 18, 34, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.analysis-placeholder {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 12px 0;
 }
 
 .card-header {
@@ -702,6 +751,75 @@ body.theme-blue {
   gap: 12px;
 }
 
+.tree-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tree-item i {
+  font-size: 14px;
+  width: 14px;
+}
+
+.tree-item:hover {
+  background: rgba(63, 163, 255, 0.12);
+  border-color: rgba(63, 163, 255, 0.4);
+  color: var(--text-primary);
+}
+
+.tree-item.active {
+  background: rgba(63, 163, 255, 0.25);
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tree-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.tree-parent {
+  justify-content: space-between;
+}
+
+.tree-caret {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 18px;
+  padding-left: 8px;
+  border-left: 1px dashed rgba(90, 126, 190, 0.35);
+}
+
+.tree-children.collapsed {
+  display: none;
+}
+
+.tree-children .tree-item {
+  padding: 6px 8px;
+}
+
 .section-header {
   font-size: 11px;
   font-weight: 700;
@@ -920,10 +1038,14 @@ body.theme-blue {
 .modal {
   position: fixed;
   inset: 0;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 20px;
+}
+
+.modal.show {
+  display: flex;
 }
 
 .modal .modal-dialog {
@@ -1350,6 +1472,9 @@ body.theme-blue {
   gap: 8px;
   font-weight: 600;
   font-size: 16px;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .modal-title i {
