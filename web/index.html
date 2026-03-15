@@ -9,122 +9,250 @@
     <link rel="stylesheet" href="css/theme.css" />
   </head>
   <body class="theme-blue">
-    <div class="app-shell">
+    <div class="app-layout">
+      <!-- SIDEBAR ESQUERDA FIXA -->
       <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-icon">
+        <div class="sidebar-brand">
+          <div class="brand-logo">
             <img src="img/app.png" alt="DSW Pro" />
           </div>
-          <div>
+          <div class="brand-info">
             <div class="brand-title">DSW Pro</div>
-            <div class="brand-sub">Configurator</div>
+            <div class="brand-subtitle">Wheel</div>
           </div>
         </div>
-        <div class="nav-section">
-          <div class="nav-title">Menu</div>
-          <ul id="navMenu" class="nav flex-column"></ul>
+
+        <div class="sidebar-body">
+          <!-- Painel de Conexão -->
+          <div class="sidebar-section">
+            <div class="section-header">Conexão</div>
+            <div class="connection-status">
+              <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Desconectado</span>
+              </div>
+              <div class="status-hint" id="connectionLabel">Nenhum dispositivo</div>
+            </div>
+          </div>
+
+          <!-- Abas Dinâmicas (para classes ativas) -->
+          <div id="activeTabs" class="sidebar-tabs">
+            <!-- Gerado dinamicamente por JavaScript -->
+          </div>
         </div>
+
         <div class="sidebar-footer">
-          <div id="connectionPill" class="status-pill">
-            <span class="dot"></span>
-            <span>Desconectado</span>
-          </div>
-          <div id="connectionLabel" class="status-caption">Nenhum dispositivo conectado</div>
+          <small class="text-muted">DSW Pro v1.0</small>
         </div>
       </aside>
 
-      <main class="main-area">
+      <!-- AREA PRINCIPAL -->
+      <div class="main-wrapper">
+        <!-- TOPBAR -->
         <header class="topbar">
-          <div>
-            <h1>Central DSW Pro</h1>
-            <p>Interface real, escura e elegante com conexao serial e perfis ativos.</p>
+          <div class="topbar-brand">
+            <i class="bi bi-grid-1x2"></i>
+            <span>Painel</span>
           </div>
+          <div class="topbar-spacer"></div>
           <div class="topbar-actions">
-            <button id="refreshAll" class="btn btn-ghost">
+            <button id="refreshAll" class="btn-icon" title="Atualizar">
               <i class="bi bi-arrow-clockwise"></i>
-              Atualizar
+            </button>
+            <button id="openProfilesBtn" class="btn-primary-sm" title="Gerenciar Perfis">
+              <i class="bi bi-collection"></i>
+              Perfis
             </button>
           </div>
         </header>
 
-        <section class="grid-cards">
-          <div class="card glass-card">
-            <div class="card-body">
-              <div class="card-title">Status do Hardware</div>
-              <div class="metric">
-                <div id="fwValue" class="metric-value">--</div>
-                <div class="metric-label">Firmware</div>
+        <!-- CONTEÚDO PRINCIPAL -->
+        <div class="main-content">
+          <!-- Cards de Status -->
+          <section class="status-cards">
+            <div class="status-card">
+              <div class="card-header">
+                <i class="bi bi-cpu"></i>
+                <span>Status do Hardware</span>
               </div>
-              <div class="metric-row">
-                <div>
-                  <div class="metric-small">RAM livre</div>
-                  <div id="ramValue" class="metric-value-sm">--</div>
+              <div class="card-body">
+                <div class="metric-item">
+                  <span class="metric-label">Firmware</span>
+                  <span class="metric-value" id="fwValue">--</span>
                 </div>
-                <div>
-                  <div class="metric-small">Temperatura</div>
-                  <div id="tempValue" class="metric-value-sm">--</div>
+                <div class="metrics-row">
+                  <div class="metric-item">
+                    <span class="metric-label">RAM</span>
+                    <span class="metric-value" id="ramValue">--</span>
+                  </div>
+                  <div class="metric-item">
+                    <span class="metric-label">Temp</span>
+                    <span class="metric-value" id="tempValue">--</span>
+                  </div>
                 </div>
-              </div>
-              <div class="metric-row">
-                <div>
-                  <div class="metric-small">Hardware</div>
-                  <div id="hwValue" class="metric-value-sm">--</div>
-                </div>
-                <div>
-                  <div class="metric-small">Conexao</div>
-                  <div id="connValue" class="metric-value-sm">--</div>
+                <div class="metrics-row">
+                  <div class="metric-item">
+                    <span class="metric-label">Hardware</span>
+                    <span class="metric-value" id="hwValue">--</span>
+                  </div>
+                  <div class="metric-item">
+                    <span class="metric-label">Conexão</span>
+                    <span class="metric-value" id="connValue">--</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="card glass-card">
-            <div class="card-body">
-              <div class="card-title">Perfis</div>
-              <div id="profileList" class="profile-list"></div>
-              <div class="profile-actions">
-                <button id="profileApply" class="btn btn-primary btn-sm">Aplicar</button>
-                <button id="profileSave" class="btn btn-outline-light btn-sm">Salvar do hardware</button>
+            <div class="status-card">
+              <div class="card-header">
+                <i class="bi bi-usb-plug"></i>
+                <span>Conexão Serial</span>
               </div>
-              <div class="profile-actions secondary">
-                <button id="profileCreate" class="btn btn-ghost btn-sm">Novo</button>
-                <button id="profileRename" class="btn btn-ghost btn-sm">Renomear</button>
-                <button id="profileDelete" class="btn btn-ghost btn-sm">Excluir</button>
+              <div class="card-body">
+                <div id="portList" class="port-list"></div>
+                <div class="card-actions">
+                  <button id="refreshPorts" class="btn-ghost" title="Atualizar">
+                    <i class="bi bi-arrow-clockwise"></i>
+                  </button>
+                  <button id="connectBtn" class="btn-primary-sm" title="Conectar">
+                    <i class="bi bi-plug"></i>
+                    Conectar
+                  </button>
+                  <button id="disconnectBtn" class="btn-outline" title="Desconectar">
+                    <i class="bi bi-plug-fill"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="status-card">
+              <div class="card-header">
+                <i class="bi bi-gear-wide-connected"></i>
+                <span>Main Class</span>
+              </div>
+              <div class="card-body">
+                <select id="mainClassSelect" class="form-select-custom"></select>
+                <button id="mainClassApply" class="btn-primary-sm" style="width: 100%; margin-top: 8px;">
+                  <i class="bi bi-check2-circle"></i>
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Classes Disponíveis -->
+          <section class="classes-section">
+            <div class="section-title">
+              <span>Classes Disponíveis</span>
+              <span class="badge-count" id="classCount">0</span>
+            </div>
+            <div id="classList" class="classes-grid"></div>
+          </section>
+        </div>
+
+        <!-- FOOTER -->
+        <footer class="app-footer">
+          <div class="footer-left">
+            <span class="footer-status" id="saveStatus">Pronto</span>
+            <span class="footer-hint" id="footerConnection">Nenhum dispositivo</span>
+          </div>
+          <div class="footer-center">
+            <button id="sidebarSaveFlash" class="hw-btn hw-save" title="Salvar na Flash">
+              <i class="bi bi-save2"></i>
+              Salvar
+            </button>
+            <button id="sidebarReboot" class="hw-btn hw-reboot" title="Reiniciar">
+              <i class="bi bi-arrow-clockwise"></i>
+              Reboot
+            </button>
+            <button id="sidebarFormat" class="hw-btn hw-format" title="Formatar">
+              <i class="bi bi-exclamation-triangle"></i>
+              Formatar
+            </button>
+          </div>
+          <div class="footer-right">
+            <span class="footer-info">DSW Pro v1.0</span>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Modal de Perfis (Oculto por padrão) -->
+    <div id="profilesModal" class="modal fade" tabindex="-1" style="display: none;">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-collection"></i>
+              Gerenciar Perfis
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-section">
+              <label class="section-label">Perfil Ativo</label>
+              <div class="selector-row">
+                <select id="profileSelectModal" class="form-select-custom"></select>
+                <button id="profileSelectApply" class="btn-outline" title="Selecionar">
+                  <i class="bi bi-check2-circle"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-divider"></div>
+
+            <div class="modal-section">
+              <label class="section-label">Ações</label>
+              <div class="btn-grid-2">
+                <button id="profileSave" class="btn-outline" title="Salvar do hardware">
+                  <i class="bi bi-download"></i>
+                  Salvar Hardware
+                </button>
+                <button id="profileApply" class="btn-outline" title="Aplicar ao hardware">
+                  <i class="bi bi-check2-circle"></i>
+                  Aplicar
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-divider"></div>
+
+            <div class="modal-section">
+              <label class="section-label">Gerenciamento</label>
+              <div class="btn-grid-3">
+                <button id="profileCreate" class="btn-success" title="Novo">
+                  <i class="bi bi-plus-circle"></i>
+                  Novo
+                </button>
+                <button id="profileRename" class="btn-info" title="Renomear">
+                  <i class="bi bi-pencil"></i>
+                  Renomear
+                </button>
+                <button id="profileDelete" class="btn-danger" title="Excluir">
+                  <i class="bi bi-trash"></i>
+                  Excluir
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-divider"></div>
+
+            <div class="modal-section">
+              <label class="section-label">Importar / Exportar</label>
+              <div class="btn-grid-2">
+                <button id="profileExport" class="btn-ghost" title="Exportar">
+                  <i class="bi bi-box-arrow-up-right"></i>
+                  Exportar
+                </button>
+                <button id="profileImport" class="btn-ghost" title="Importar">
+                  <i class="bi bi-box-arrow-in-down"></i>
+                  Importar
+                </button>
               </div>
             </div>
           </div>
-
-          <div class="card glass-card">
-            <div class="card-body">
-              <div class="card-title">Conexao Serial</div>
-              <div id="portList" class="port-list"></div>
-              <div class="port-actions">
-                <button id="refreshPorts" class="btn btn-ghost btn-sm">
-                  <i class="bi bi-arrow-clockwise"></i>
-                  Atualizar portas
-                </button>
-                <button id="connectBtn" class="btn btn-primary btn-sm">
-                  <i class="bi bi-plug"></i>
-                  Conectar
-                </button>
-                <button id="disconnectBtn" class="btn btn-outline-light btn-sm">
-                  <i class="bi bi-plug-fill"></i>
-                  Desconectar
-                </button>
-              </div>
-              <div id="portHint" class="port-hint">Selecione um dispositivo abaixo.</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="tabs-section">
-          <div class="section-header">
-            <h2>Classes Ativas</h2>
-            <span class="badge rounded-pill">Dinamico</span>
-          </div>
-          <div id="activeTabs" class="tabs-grid"></div>
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
 
     <script src="../bootstrap-5.3.0-dist/js/bootstrap.bundle.min.js"></script>

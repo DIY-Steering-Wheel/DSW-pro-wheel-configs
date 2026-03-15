@@ -13,6 +13,14 @@ class Api:
         self._serial = SerialBackend()
         self._profiles = ProfileStore()
 
+    @staticmethod
+    def _first_path(selection):
+        if not selection:
+            return None
+        if isinstance(selection, (list, tuple)):
+            return selection[0] if selection else None
+        return selection
+
     def get_ui_schema(self) -> Dict:
         return self._schema
 
@@ -41,6 +49,21 @@ class Api:
 
     def get_active_classes(self) -> List[Dict]:
         return self._serial.get_active_tabs()
+
+    def get_main_classes(self) -> Dict:
+        return self._serial.get_main_classes()
+
+    def set_main_class(self, class_id: int) -> Dict:
+        return {"ok": self._serial.set_main_class(class_id)}
+
+    def reboot(self) -> Dict:
+        return {"ok": self._serial.reboot()}
+
+    def format_flash(self) -> Dict:
+        return {"ok": self._serial.format_flash()}
+
+    def save_to_flash(self) -> Dict:
+        return {"ok": self._serial.save_to_flash()}
 
     def get_profiles(self) -> Dict:
         return {
@@ -111,6 +134,43 @@ class Api:
                 instance=int(item.get("instance", 0)),
             )
         return {"ok": True}
+
+    def set_class_active(self, class_id: int, enabled: bool) -> Dict:
+        ok = self._serial.set_class_active(class_id, enabled)
+        if not ok:
+            return {"ok": False, "error": "unsupported"}
+        return {"ok": True}
+
+    def export_profile(self, name: str) -> Dict:
+        if not name or name == "None":
+            return {"ok": False, "error": "invalid_profile"}
+        selection = webview.windows[0].create_file_dialog(
+            webview.SAVE_DIALOG,
+            save_filename=f"{name}.json",
+            file_types=("JSON (*.json)",),
+        )
+        path = self._first_path(selection)
+        if not path:
+            return {"ok": False, "error": "canceled"}
+        ok = self._profiles.export_profile(name, path)
+        return {"ok": ok}
+
+    def import_profile(self) -> Dict:
+        selection = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=False,
+            file_types=("JSON (*.json)",),
+        )
+        path = self._first_path(selection)
+        if not path:
+            return {"ok": False, "error": "canceled"}
+        name = self._profiles.import_profile(path)
+        return {
+            "ok": bool(name),
+            "name": name,
+            "current": self._profiles.get_current_profile(),
+            "profiles": self._profiles.list_profiles(),
+        }
 
 
 def main():

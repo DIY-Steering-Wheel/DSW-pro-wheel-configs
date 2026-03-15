@@ -35,6 +35,52 @@ CLASS_REGISTRY: List[UiClass] = [
     UiClass(0x005, "canremote", "CAN Remote", "bi-broadcast", "Controle CAN remoto.", "io"),
 ]
 
+ICON_BY_CLSNAME = {
+    "ffb": "bi-speedometer2",
+    "axis": "bi-sliders",
+    "tmc": "bi-cpu",
+    "tmc4671": "bi-cpu",
+    "tmcdebug": "bi-bug",
+    "pwm": "bi-sine-wave",
+    "midi": "bi-music-note-beamed",
+    "analog": "bi-filter-circle",
+    "encoder": "bi-disc",
+    "button": "bi-toggle-on",
+    "expo": "bi-graph-up",
+    "odrive": "bi-cpu",
+    "vesc": "bi-cpu",
+    "simplemotion": "bi-cpu",
+    "rmd": "bi-cpu",
+    "serial": "bi-usb-plug",
+    "dfu": "bi-cloud-arrow-down",
+    "profile": "bi-collection",
+    "can": "bi-broadcast",
+    "effects": "bi-lightning-charge",
+}
+
+LABEL_BY_CLSNAME = {
+    "ffb": "Force Feedback",
+    "axis": "Eixos",
+    "tmc": "TMC",
+    "tmc4671": "TMC4671",
+    "tmcdebug": "TMC Debug",
+    "pwm": "PWM Driver",
+    "midi": "MIDI",
+    "analog": "Analog",
+    "encoder": "Encoder",
+    "button": "Botoes",
+    "expo": "Expo",
+    "odrive": "ODrive",
+    "vesc": "VESC",
+    "simplemotion": "SimpleMotion",
+    "rmd": "RMD",
+    "serial": "Serial",
+    "dfu": "DFU",
+    "profile": "Perfis",
+    "can": "CAN Remote",
+    "effects": "Efeitos",
+}
+
 MENU_SECTIONS = [
     {"key": "dashboard", "label": "Painel", "icon": "bi-grid-1x2"},
     {"key": "connection", "label": "Conexao", "icon": "bi-usb-plug"},
@@ -88,6 +134,19 @@ def build_tabs_from_lsactive(reply: str) -> List[Dict]:
     tabs = []
     for item in active:
         info = _class_info_by_id(item["id"])
+        clsname = item.get("clsname", "").lower()
+        if info.key == "unknown" and clsname:
+            for key, icon in ICON_BY_CLSNAME.items():
+                if key in clsname:
+                    info = UiClass(
+                        item["id"],
+                        clsname,
+                        LABEL_BY_CLSNAME.get(key, item["name"]),
+                        icon,
+                        "Classe ativa.",
+                        "misc",
+                    )
+                    break
         axis_hint = (
             f" {item['unique']}"
             if item["id"]

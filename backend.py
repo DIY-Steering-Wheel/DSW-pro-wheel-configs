@@ -141,6 +141,69 @@ class SerialBackend:
             return []
         return build_tabs_from_lsactive(reply)
 
+    def get_main_classes(self) -> Dict:
+        if not self.is_connected():
+            return {"current": None, "classes": []}
+        main_id = self.request("main", "id")
+        lsmain = self.request("sys", "lsmain")
+        classes = []
+        if lsmain:
+            for line in lsmain.split("\n"):
+                if not line:
+                    continue
+                parts = line.split(":", 2)
+                if len(parts) < 3:
+                    continue
+                class_id, creatable, name = parts
+                try:
+                    class_id = int(class_id)
+                except ValueError:
+                    continue
+                classes.append(
+                    {
+                        "id": class_id,
+                        "name": name,
+                        "creatable": creatable != "0",
+                    }
+                )
+        try:
+            current = int(main_id) if main_id is not None else None
+        except ValueError:
+            current = None
+        return {"current": current, "classes": classes}
+
+    def set_main_class(self, class_id: int) -> bool:
+        if not self.is_connected():
+            return False
+        self.send_value("sys", "main", value=class_id)
+        self.send_raw(encode_cmd("sys", "reboot"))
+        return True
+
+    def reboot(self) -> bool:
+        if not self.is_connected():
+            return False
+        self.send_raw(encode_cmd("sys", "reboot"))
+        return True
+
+    def format_flash(self) -> bool:
+        if not self.is_connected():
+            return False
+        self.send_value("sys", "format", value=1)
+        self.send_raw(encode_cmd("sys", "reboot"))
+        return True
+
+    def save_to_flash(self) -> bool:
+        if not self.is_connected():
+            return False
+        reply = self.request("sys", "save")
+        return reply is not None
+
+    def set_class_active(self, class_id: int, enabled: bool) -> bool:
+        if not self.is_connected():
+            return False
+        # TODO: confirm firmware commands for enabling/disabling classes.
+        return False
+
     def _register_callback(
         self,
         cls: str,
@@ -302,3 +365,62 @@ class ProfileStore:
 
     def get_call_order(self) -> List[Dict]:
         return self._profile_setup.get("callOrder", [])
+
+    def export_profile(self, name: str, path: str) -> bool:
+        if not name:
+            return False
+        for entry in self._profiles["profiles"]:
+            if entry["name"] == name:
+                payload = {"release": self.RELEASE, "profile": {"name": name, "data": entry.get("data", [])}}
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, indent=2)
+                return True
+        return False
+
+    def import_profile(self, path: str) -> Optional[str]:
+        if not path or not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+
+        profiles_to_add: List[Dict] = []
+        if isinstance(payload, dict) and isinstance(payload.get("profile"), dict):
+            profiles_to_add = [payload["profile"]]
+        elif isinstance(payload, dict) and "name" in payload and "data" in payload:
+            profiles_to_add = [{"name": payload.get("name"), "data": payload.get("data", [])}]
+        elif isinstance(payload, dict) and isinstance(payload.get("profiles"), list):
+            profiles_to_add = payload["profiles"]
+
+        if not profiles_to_add:
+            return None
+
+        imported_name = None
+        for entry in profiles_to_add:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name") or os.path.splitext(os.path.basename(path))[0]
+            if not name or name == "None":
+                continue
+            data = entry.get("data", [])
+            name = self._unique_import_name(name)
+            self._profiles["profiles"].append({"name": name, "data": data})
+            imported_name = name
+
+        if imported_name:
+            self._write(self._profiles)
+        return imported_name
+
+    def _unique_import_name(self, base: str) -> str:
+        existing = set(self.list_profiles())
+        if base not in existing:
+            return base
+        suffix = " (importado)"
+        candidate = f"{base}{suffix}"
+        if candidate not in existing:
+            return candidate
+        idx = 2
+        while True:
+            candidate = f"{base}{suffix} {idx}"
+            if candidate not in existing:
+                return candidate
+            idx += 1
