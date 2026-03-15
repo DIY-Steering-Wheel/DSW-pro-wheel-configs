@@ -1,0 +1,12 @@
+{
+  "release": 2,
+  "global": {
+    "current_profile": "None"
+  },
+  "profiles": [
+    {
+      "name": "None",
+      "data": []
+    }
+  ]
+}

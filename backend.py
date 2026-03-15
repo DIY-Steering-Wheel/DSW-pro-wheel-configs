@@ -1,0 +1,304 @@
+import json
+import os
+import threading
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+import serial
+import serial.tools.list_ports
+
+from protocol import encode_cmd, encode_get, encode_set, parse_reply
+from ui_registry import build_tabs_from_lsactive
+
+
+OFFICIAL_VID_PID: List[Tuple[int, int]] = [(0x1209, 0xFFB0)]
+
+
+@dataclass
+class SerialStatus:
+    connected: bool
+    port: Optional[str]
+    supported: bool
+    fw: Optional[str]
+    hw: Optional[str]
+    heapfree: Optional[str]
+    temp: Optional[str]
+
+
+class SerialBackend:
+    def __init__(self):
+        self._serial: Optional[serial.Serial] = None
+        self._lock = threading.Lock()
+        self._reader: Optional[threading.Thread] = None
+        self._running = False
+        self._buffer = ""
+        self._callbacks: List[Dict] = []
+        self._last_port_info: Optional[Dict] = None
+
+    def list_ports(self) -> List[Dict]:
+        ports = []
+        for port in serial.tools.list_ports.comports():
+            vid = port.vid
+            pid = port.pid
+            supported = (vid, pid) in OFFICIAL_VID_PID if vid is not None and pid is not None else False
+            ports.append(
+                {
+                    "device": port.device,
+                    "name": port.name,
+                    "description": port.description or "",
+                    "vid": vid,
+                    "pid": pid,
+                    "hwid": port.hwid,
+                    "supported": supported,
+                }
+            )
+        return ports
+
+    def connect(self, port_name: str) -> bool:
+        with self._lock:
+            if self._serial and self._serial.is_open:
+                return True
+            try:
+                self._serial = serial.Serial(port=port_name, baudrate=115200, timeout=0.1)
+                self._serial.dtr = True
+                self._running = True
+                self._reader = threading.Thread(target=self._read_loop, daemon=True)
+                self._reader.start()
+                self._last_port_info = {"device": port_name}
+                return True
+            except serial.SerialException:
+                self._serial = None
+                self._running = False
+                return False
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self._running = False
+            if self._serial:
+                try:
+                    self._serial.close()
+                finally:
+                    self._serial = None
+
+    def is_connected(self) -> bool:
+        return self._serial is not None and self._serial.is_open
+
+    def send_raw(self, payload: str) -> None:
+        if not self.is_connected():
+            return
+        with self._lock:
+            self._serial.write(payload.encode("utf-8"))
+
+    def request(self, cls: str, cmd: str, instance: int = 0, adr: Optional[int] = None, typechar: str = "?") -> Optional[str]:
+        if not self.is_connected():
+            return None
+
+        result = {"value": None}
+        evt = threading.Event()
+
+        def handler(reply: str) -> None:
+            result["value"] = reply
+            evt.set()
+
+        cb = self._register_callback(cls, cmd, instance, adr, typechar, handler)
+        if typechar == "?":
+            self.send_raw(encode_get(cls, cmd, instance=instance, address=adr))
+        elif typechar == "":
+            self.send_raw(encode_cmd(cls, cmd, instance=instance, address=adr))
+        else:
+            self.send_raw(encode_get(cls, cmd, instance=instance, address=adr))
+
+        evt.wait(1.5)
+        if not evt.is_set() and cb in self._callbacks:
+            self._callbacks.remove(cb)
+        return result["value"]
+
+    def send_value(self, cls: str, cmd: str, value: int, instance: int = 0, adr: Optional[int] = None) -> None:
+        if not self.is_connected():
+            return
+        self.send_raw(encode_set(cls, cmd, value=value, instance=instance, address=adr))
+
+    def get_status(self) -> SerialStatus:
+        if not self.is_connected():
+            return SerialStatus(False, None, False, None, None, None, None)
+        fw = self.request("sys", "swver")
+        hw = self.request("sys", "hwtype")
+        heapfree = self.request("sys", "heapfree")
+        temp = self.request("sys", "temp")
+        port = self._serial.port if self._serial else None
+        supported = False
+        if port:
+            for entry in self.list_ports():
+                if entry["device"] == port:
+                    supported = entry["supported"]
+                    break
+        return SerialStatus(True, port, supported, fw, hw, heapfree, temp)
+
+    def get_active_tabs(self) -> List[Dict]:
+        reply = self.request("sys", "lsactive")
+        if not reply:
+            return []
+        return build_tabs_from_lsactive(reply)
+
+    def _register_callback(
+        self,
+        cls: str,
+        cmd: str,
+        instance: int,
+        address: Optional[int],
+        typechar: str,
+        callback,
+    ) -> Dict:
+        entry = {
+            "cls": cls,
+            "cmd": cmd,
+            "instance": instance,
+            "address": address,
+            "typechar": typechar,
+            "callback": callback,
+        }
+        self._callbacks.append(entry)
+        return entry
+
+    def _dispatch(self, parsed) -> None:
+        to_remove = []
+        for cb in self._callbacks:
+            if cb["cls"] != parsed.cls:
+                continue
+            if cb["cmd"] != parsed.cmd:
+                continue
+            if cb["instance"] not in (parsed.instance, 0xFF):
+                continue
+            if cb["typechar"] not in (parsed.typechar, None):
+                continue
+            if cb["address"] is not None and cb["address"] != parsed.address:
+                continue
+            cb["callback"](parsed.reply)
+            to_remove.append(cb)
+        for cb in to_remove:
+            if cb in self._callbacks:
+                self._callbacks.remove(cb)
+
+    def _read_loop(self) -> None:
+        while self._running and self._serial:
+            try:
+                chunk = self._serial.read(512)
+            except serial.SerialException:
+                self.disconnect()
+                return
+            if not chunk:
+                time.sleep(0.01)
+                continue
+            try:
+                self._buffer += chunk.decode("utf-8", errors="ignore")
+            except UnicodeDecodeError:
+                continue
+
+            while True:
+                end = self._buffer.find("]")
+                if end == -1:
+                    break
+                start = self._buffer.find("[")
+                if start == -1 or start > end:
+                    self._buffer = self._buffer[end + 1 :]
+                    continue
+                frame = self._buffer[start : end + 1]
+                self._buffer = self._buffer[end + 1 :]
+                parsed = parse_reply(frame)
+                if parsed:
+                    self._dispatch(parsed)
+
+
+class ProfileStore:
+    RELEASE = 2
+
+    def __init__(self):
+        self._profiles_path = os.path.join(os.getcwd(), "profiles.json")
+        self._profile_setup_path = os.path.join("OLD ui", "res", "profile.cfg")
+        self._profiles = self._load_or_create()
+        self._profile_setup = self._load_profile_setup()
+
+    def _load_or_create(self) -> Dict:
+        if os.path.exists(self._profiles_path):
+            with open(self._profiles_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        else:
+            data = {
+                "release": self.RELEASE,
+                "global": {"current_profile": "None"},
+                "profiles": [{"name": "None", "data": []}],
+            }
+            self._write(data)
+        if data.get("release", 0) < self.RELEASE:
+            data["release"] = self.RELEASE
+            self._write(data)
+        return data
+
+    def _load_profile_setup(self) -> Dict:
+        if os.path.exists(self._profile_setup_path):
+            with open(self._profile_setup_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        return {"release": 0, "callOrder": []}
+
+    def _write(self, data: Dict) -> None:
+        with open(self._profiles_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+
+    def list_profiles(self) -> List[str]:
+        return [p["name"] for p in self._profiles.get("profiles", [])]
+
+    def get_current_profile(self) -> str:
+        return self._profiles.get("global", {}).get("current_profile", "None")
+
+    def select_profile(self, name: str) -> bool:
+        if name not in self.list_profiles():
+            return False
+        self._profiles["global"]["current_profile"] = name
+        self._write(self._profiles)
+        return True
+
+    def create_profile(self, name: str) -> bool:
+        if not name or name in self.list_profiles():
+            return False
+        self._profiles["profiles"].append({"name": name, "data": []})
+        self._write(self._profiles)
+        return True
+
+    def rename_profile(self, old: str, new: str) -> bool:
+        if old == "None" or not new or new in self.list_profiles():
+            return False
+        for entry in self._profiles["profiles"]:
+            if entry["name"] == old:
+                entry["name"] = new
+                if self.get_current_profile() == old:
+                    self._profiles["global"]["current_profile"] = new
+                self._write(self._profiles)
+                return True
+        return False
+
+    def delete_profile(self, name: str) -> bool:
+        if name == "None":
+            return False
+        self._profiles["profiles"] = [p for p in self._profiles["profiles"] if p["name"] != name]
+        if self.get_current_profile() == name:
+            self._profiles["global"]["current_profile"] = "None"
+        self._write(self._profiles)
+        return True
+
+    def save_profile_data(self, name: str, data: List[Dict]) -> bool:
+        for entry in self._profiles["profiles"]:
+            if entry["name"] == name:
+                entry["data"] = data
+                self._write(self._profiles)
+                return True
+        return False
+
+    def get_profile_data(self, name: str) -> List[Dict]:
+        for entry in self._profiles["profiles"]:
+            if entry["name"] == name:
+                return entry.get("data", [])
+        return []
+
+    def get_call_order(self) -> List[Dict]:
+        return self._profile_setup.get("callOrder", [])

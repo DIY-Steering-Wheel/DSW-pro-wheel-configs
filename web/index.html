@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DSW Pro Wheel Configurator</title>
+    <link rel="stylesheet" href="../bootstrap-5.3.0-dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="../bootstrap-icons-1.13.1/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="css/theme.css" />
+  </head>
+  <body class="theme-blue">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-icon">
+            <img src="img/app.png" alt="DSW Pro" />
+          </div>
+          <div>
+            <div class="brand-title">DSW Pro</div>
+            <div class="brand-sub">Configurator</div>
+          </div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-title">Menu</div>
+          <ul id="navMenu" class="nav flex-column"></ul>
+        </div>
+        <div class="sidebar-footer">
+          <div id="connectionPill" class="status-pill">
+            <span class="dot"></span>
+            <span>Desconectado</span>
+          </div>
+          <div id="connectionLabel" class="status-caption">Nenhum dispositivo conectado</div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div>
+            <h1>Central DSW Pro</h1>
+            <p>Interface real, escura e elegante com conexao serial e perfis ativos.</p>
+          </div>
+          <div class="topbar-actions">
+            <button id="refreshAll" class="btn btn-ghost">
+              <i class="bi bi-arrow-clockwise"></i>
+              Atualizar
+            </button>
+          </div>
+        </header>
+
+        <section class="grid-cards">
+          <div class="card glass-card">
+            <div class="card-body">
+              <div class="card-title">Status do Hardware</div>
+              <div class="metric">
+                <div id="fwValue" class="metric-value">--</div>
+                <div class="metric-label">Firmware</div>
+              </div>
+              <div class="metric-row">
+                <div>
+                  <div class="metric-small">RAM livre</div>
+                  <div id="ramValue" class="metric-value-sm">--</div>
+                </div>
+                <div>
+                  <div class="metric-small">Temperatura</div>
+                  <div id="tempValue" class="metric-value-sm">--</div>
+                </div>
+              </div>
+              <div class="metric-row">
+                <div>
+                  <div class="metric-small">Hardware</div>
+                  <div id="hwValue" class="metric-value-sm">--</div>
+                </div>
+                <div>
+                  <div class="metric-small">Conexao</div>
+                  <div id="connValue" class="metric-value-sm">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card glass-card">
+            <div class="card-body">
+              <div class="card-title">Perfis</div>
+              <div id="profileList" class="profile-list"></div>
+              <div class="profile-actions">
+                <button id="profileApply" class="btn btn-primary btn-sm">Aplicar</button>
+                <button id="profileSave" class="btn btn-outline-light btn-sm">Salvar do hardware</button>
+              </div>
+              <div class="profile-actions secondary">
+                <button id="profileCreate" class="btn btn-ghost btn-sm">Novo</button>
+                <button id="profileRename" class="btn btn-ghost btn-sm">Renomear</button>
+                <button id="profileDelete" class="btn btn-ghost btn-sm">Excluir</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card glass-card">
+            <div class="card-body">
+              <div class="card-title">Conexao Serial</div>
+              <div id="portList" class="port-list"></div>
+              <div class="port-actions">
+                <button id="refreshPorts" class="btn btn-ghost btn-sm">
+                  <i class="bi bi-arrow-clockwise"></i>
+                  Atualizar portas
+                </button>
+                <button id="connectBtn" class="btn btn-primary btn-sm">
+                  <i class="bi bi-plug"></i>
+                  Conectar
+                </button>
+                <button id="disconnectBtn" class="btn btn-outline-light btn-sm">
+                  <i class="bi bi-plug-fill"></i>
+                  Desconectar
+                </button>
+              </div>
+              <div id="portHint" class="port-hint">Selecione um dispositivo abaixo.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tabs-section">
+          <div class="section-header">
+            <h2>Classes Ativas</h2>
+            <span class="badge rounded-pill">Dinamico</span>
+          </div>
+          <div id="activeTabs" class="tabs-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="../bootstrap-5.3.0-dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
