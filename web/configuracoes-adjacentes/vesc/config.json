@@ -1,0 +1,14 @@
+{
+  "id": "vesc",
+  "title": "VESC",
+  "icon": "bi-cpu",
+  "definition_key": "driver",
+  "definition_match": [
+    "vesc"
+  ],
+  "clsname_match": [
+    "vesc"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

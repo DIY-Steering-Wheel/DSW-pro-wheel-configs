@@ -1,0 +1,16 @@
+{
+  "id": "odrive",
+  "title": "ODrive",
+  "icon": "bi-cpu",
+  "definition_key": "driver",
+  "definition_match": [
+    "odrive",
+    "odrv"
+  ],
+  "clsname_match": [
+    "odrive",
+    "odrv"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

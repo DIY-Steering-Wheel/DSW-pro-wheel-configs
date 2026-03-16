@@ -1792,12 +1792,40 @@ function showTerminalModal() {
           <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="terminal-output" id="terminalOutput"></div>
-          <div class="terminal-input-group">
-            <input type="text" class="terminal-input" placeholder="Digite comando..." autocomplete="off">
-            <button class="btn-primary-sm terminal-send" title="Enviar">
-              <i class="bi bi-send"></i>
-            </button>
+          <div class="terminal-layout">
+            <div class="terminal-shell">
+              <div class="terminal-output" id="terminalOutput"></div>
+              <div class="terminal-input-group">
+                <input type="text" class="terminal-input" placeholder="Digite comando..." autocomplete="off">
+                <button class="btn-primary-sm terminal-send" title="Enviar">
+                  <i class="bi bi-send"></i>
+                </button>
+              </div>
+            </div>
+            <div class="terminal-help">
+              <div class="terminal-help-title">Guia rápido</div>
+              <div class="terminal-help-section">
+                <div class="terminal-help-label">Leitura básica</div>
+                <div class="terminal-chip">sys.swver?;</div>
+                <div class="terminal-chip">sys.temp?;</div>
+                <div class="terminal-chip">main.id?;</div>
+              </div>
+              <div class="terminal-help-section">
+                <div class="terminal-help-label">Diagnóstico</div>
+                <div class="terminal-chip">sys.errors?;</div>
+                <div class="terminal-chip">sys.errorsclr;</div>
+                <div class="terminal-chip">sys.heapfree?;</div>
+              </div>
+              <div class="terminal-help-section">
+                <div class="terminal-help-label">Formato direto</div>
+                <div class="terminal-help-text">Use o formato <span class="terminal-inline">classe.instância.comando?;</span> para leitura.</div>
+                <div class="terminal-help-text">Exemplo: <span class="terminal-inline">axis.0.pos?;</span></div>
+              </div>
+              <div class="terminal-help-section">
+                <div class="terminal-help-label">Dica</div>
+                <div class="terminal-help-text">Ajustes críticos: faça alteração e depois use <span class="terminal-inline">Save to flash</span> no rodapé.</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Curva de Torque</title>
+  </head>
+  <body class="theme-blue">
+    <div class="adjacent-page">
+      <div class="adjacent-header">
+        <div>
+          <div class="adjacent-title">Curva de Torque</div>
+          <div class="adjacent-subtitle">Ajuste de expo por eixo</div>
+        </div>
+        <div class="adjacent-badge" id="curveBadge">--</div>
+      </div>
+
+      <div class="tab-buttons" id="curveTabs"></div>
+
+      <div class="adjacent-card">
+        <div class="adjacent-label">Expo</div>
+        <div class="curve-controls">
+          <input id="curveSlider" type="range" min="-127" max="127" value="0" class="gain-slider" />
+          <div class="curve-values">
+            <div>
+              <div class="adjacent-label">Valor</div>
+              <div class="adjacent-value" id="curveValue">0</div>
+            </div>
+            <div>
+              <div class="adjacent-label">Expo</div>
+              <div class="adjacent-value" id="curveExpo">1.00</div>
+            </div>
+          </div>
+        </div>
+        <div class="curve-hint">Valores negativos suavizam o centro; positivos deixam a resposta mais agressiva.</div>
+      </div>
+
+      <div class="adjacent-card">
+        <div class="adjacent-label">Pr?via da curva</div>
+        <canvas id="curveCanvas" width="520" height="240"></canvas>
+      </div>
+
+      <div class="adjacent-card hint-card">
+        <div class="adjacent-row">
+          <div>
+            <div class="adjacent-label">Status</div>
+            <div class="adjacent-hint" id="curveHint">Pronto</div>
+          </div>
+          <button class="btn-primary-sm" id="curveRefresh" type="button">Atualizar</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="index.js"></script>
+    <script src="../../js/track-changes.js"></script>
+  </body>
+</html>

@@ -1,0 +1,114 @@
+.adjacent-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  color: var(--text-primary);
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+.adjacent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adjacent-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.adjacent-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.adjacent-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(63, 163, 255, 0.15);
+  border: 1px solid rgba(63, 163, 255, 0.3);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.adjacent-card {
+  background: rgba(12, 18, 34, 0.6);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adjacent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.adjacent-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.adjacent-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.adjacent-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.form-input-sm {
+  background: rgba(14, 22, 44, 0.9);
+  color: var(--text-primary);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.form-input-sm:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.hint-card {
+  background: rgba(20, 30, 54, 0.6);
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Encoder Tuning</title>
+  </head>
+  <body class="theme-blue">
+    <div class="adjacent-page">
+      <div class="adjacent-header">
+        <div>
+          <div class="adjacent-title">Encoder Tuning</div>
+          <div class="adjacent-subtitle">Perfis e filtros por eixo</div>
+        </div>
+        <div class="adjacent-badge" id="encoderTuneBadge">--</div>
+      </div>
+
+      <div class="tab-buttons" id="encoderTuneTabs"></div>
+
+      <div class="adjacent-card">
+        <div class="adjacent-label">Perfil do Encoder</div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label class="form-label" for="encProfile">Perfil</label>
+            <select id="encProfile" class="form-select-custom">
+              <option value="0">Baixa resolu??o</option>
+              <option value="1">M?dia resolu??o</option>
+              <option value="2">Alta resolu??o</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="encCpr">CPR (leitura)</label>
+            <input id="encCpr" type="number" class="form-input-sm" readonly />
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn-outline" id="encSuggest" type="button">Sugerir perfil</button>
+        </div>
+      </div>
+
+      <div class="adjacent-card">
+        <div class="adjacent-label">Filtros do Encoder</div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label class="form-label">Speed Filter (Hz)</label>
+            <input id="encSpeedFreq" type="number" class="form-input-sm" readonly />
+          </div>
+          <div class="form-field">
+            <label class="form-label">Speed Filter Q</label>
+            <input id="encSpeedQ" type="number" class="form-input-sm" readonly />
+          </div>
+          <div class="form-field">
+            <label class="form-label">Accel Filter (Hz)</label>
+            <input id="encAccelFreq" type="number" class="form-input-sm" readonly />
+          </div>
+          <div class="form-field">
+            <label class="form-label">Accel Filter Q</label>
+            <input id="encAccelQ" type="number" class="form-input-sm" readonly />
+          </div>
+        </div>
+      </div>
+
+      <div class="adjacent-card" id="reductionCard" style="display:none">
+        <div class="adjacent-label">Rela??o do Encoder</div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label class="form-label" for="encReductionNum">Numerador</label>
+            <input id="encReductionNum" type="number" class="form-input-sm" min="1" />
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="encReductionDen">Denominador</label>
+            <input id="encReductionDen" type="number" class="form-input-sm" min="1" />
+          </div>
+        </div>
+        <div class="adjacent-hint" id="encReductionHint">Prescaler: --</div>
+      </div>
+
+      <div class="adjacent-card hint-card">
+        <div class="adjacent-row">
+          <div>
+            <div class="adjacent-label">Status</div>
+            <div class="adjacent-hint" id="encTuneHint">Pronto</div>
+          </div>
+          <button class="btn-primary-sm" id="encTuneRefresh" type="button">Atualizar</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="index.js"></script>
+    <script src="../../js/track-changes.js"></script>
+  </body>
+</html>

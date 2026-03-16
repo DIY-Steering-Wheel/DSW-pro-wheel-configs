@@ -1,0 +1,16 @@
+{
+  "id": "tmc",
+  "title": "TMC",
+  "icon": "bi-cpu",
+  "definition_key": "driver",
+  "definition_match": [
+    "tmc",
+    "tmc4671"
+  ],
+  "clsname_match": [
+    "tmc",
+    "tmc4671"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

@@ -1,0 +1,11 @@
+{
+  "id": "encoder-tuning",
+  "title": "Encoder Tuning",
+  "icon": "bi-graph-up",
+  "class_id": 2561,
+  "clsname_match": [
+    "axis"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}
