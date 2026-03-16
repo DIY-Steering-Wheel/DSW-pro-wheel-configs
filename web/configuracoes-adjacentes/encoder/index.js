@@ -112,48 +112,34 @@ async function loadEncoderSettings(id) {
 }
 
 async function loadEncoder() {
-  const select = document.getElementById("encoderSelect");
+  const label = document.getElementById("encoderTypeLabel");
   const hint = document.getElementById("encoderHint");
-  if (!api || !select) {
+  if (!api || !label) {
     if (hint) hint.textContent = "Sem API";
     return;
   }
   const data = await api.get_class_definitions();
   const options = data?.encoder?.classes || [];
   const current = data?.encoder?.current;
-  select.innerHTML = "";
   if (options.length === 0) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Sem classes";
-    select.appendChild(opt);
+    label.textContent = "Sem classes";
     if (hint) hint.textContent = "Sem classes";
     showPanel(null);
     return;
   }
-  options.forEach((entry) => {
-    const opt = document.createElement("option");
-    opt.value = entry.id;
-    opt.textContent = entry.name || `Classe ${entry.id}`;
-    if (entry.id === current) opt.selected = true;
-    select.appendChild(opt);
-  });
+  const currentEntry = options.find((entry) => entry.id === current);
+  label.textContent = currentEntry?.name || `Classe ${current ?? "--"}`;
   currentEncoderId = current;
   await loadEncoderSettings(current);
   if (hint) hint.textContent = "Pronto";
 }
 
 async function applyEncoder() {
-  const select = document.getElementById("encoderSelect");
   const hint = document.getElementById("encoderHint");
-  if (!api || !select) return;
-
-  const encType = parseInt(select.value, 10);
-  if (!Number.isNaN(encType)) {
-    await api.serial_set_value("axis", "enctype", encType, 0, null);
-  }
+  if (!api) return;
 
   const id = currentEncoderId;
+  if (id === null || id === undefined) return;
   if (id === 2) {
     const cpr = parseInt(document.getElementById("localCpr")?.value, 10) || 0;
     const idx = document.getElementById("localIndex")?.checked ? 1 : 0;
@@ -185,10 +171,6 @@ async function applyEncoder() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadEncoder();
-  document.getElementById("encoderSelect")?.addEventListener("change", (e) => {
-    const id = parseInt(e.target.value, 10);
-    if (!Number.isNaN(id)) loadEncoderSettings(id);
-  });
 });
 
 // API expected by the parent header controls

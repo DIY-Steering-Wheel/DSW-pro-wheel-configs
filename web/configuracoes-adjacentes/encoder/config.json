@@ -3,8 +3,8 @@
   "title": "Encoder",
   "icon": "bi-disc",
   "definition_key": "encoder",
-  "definition_match": [],
+  "definition_match": ["abn", "local", "mt", "biss", "ssi", "encoder"],
   "clsname_match": ["encoder", "enc", "abn", "mt", "biss", "ssi"],
-  "show_when_connected": true,
+  "show_when_connected": false,
   "requires_active": true
 }

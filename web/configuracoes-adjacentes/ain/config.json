@@ -3,6 +3,6 @@
   "title": "AIN (Analógico)",
   "icon": "bi-filter-circle",
   "clsname_match": ["analog", "ain", "apin", "analogsource", "analogin"],
-  "show_when_connected": true,
+  "show_when_connected": false,
   "requires_active": true
 }

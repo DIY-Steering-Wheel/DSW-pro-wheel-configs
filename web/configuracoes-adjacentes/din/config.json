@@ -3,6 +3,6 @@
   "title": "DIN (Digital)",
   "icon": "bi-toggle-on",
   "clsname_match": ["button", "din", "dpin", "digitalsource", "digitalin"],
-  "show_when_connected": true,
+  "show_when_connected": false,
   "requires_active": true
 }

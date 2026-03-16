@@ -11,6 +11,15 @@ let classDefinitions = {
   encoder: { current: null, classes: [] },
   shifter: { current: null, modes: [] },
 };
+let appliedClassDefinitions = {
+  driver: { current: null, classes: [] },
+  encoder: { current: null, classes: [] },
+  shifter: { current: null, modes: [] },
+};
+let ioDefinitions = {
+  ain: { id: null, name: "AIN-Pins", active: false, available: false, bitmask: 0 },
+  din: { id: null, name: "D-Pins", active: false, available: false, bitmask: 0 },
+};
 let joystickRates = { current: null, modes: [] };
 let lastStatus = null;
 let terminalLog = [];
@@ -86,6 +95,11 @@ function setSaveStatus(message) {
   }
 }
 
+function addSaveFooter(message) {
+  setSaveStatus(message);
+  addSystemLog(message);
+}
+
 function addSystemLog(message, level = "info") {
   const timestamp = new Date().toLocaleTimeString();
   terminalLog.push({ message, timestamp, isError: level === "error" });
@@ -159,14 +173,11 @@ function isConfigVisible(cfg) {
   // Must be connected to show any active-dependent config
   if (!lastStatus?.connected) return false;
 
-  // Show when connected flag — always visible once connected
-  if (cfg.show_when_connected) return true;
-
   let visible = false;
   
   // Strategy 1: Check definition_key (driver, encoder, shifter)
   if (cfg.definition_key) {
-    const def = classDefinitions?.[cfg.definition_key];
+    const def = appliedClassDefinitions?.[cfg.definition_key];
     if (def && def.current !== null && def.current !== undefined) {
       // For shifter: current > 0 means active
       if (cfg.definition_key === "shifter") {
@@ -189,9 +200,6 @@ function isConfigVisible(cfg) {
               visible = cfg.definition_match.some((needle) => name.includes(String(needle).toLowerCase()));
             }
           }
-        } else {
-          // No definition_match filter, just needs a current value
-          visible = true;
         }
       }
     }
@@ -223,26 +231,6 @@ function isConfigVisible(cfg) {
   }
   
   return false;
-}
-
-/**
- * Map from definition key (driver, encoder, shifter) to adjacent config ids
- * that should open when the user selects a class in that definition.
- */
-const DEFINITION_ADJACENT_MAP = {
-  driver: "force-feedback",
-  encoder: "encoder",
-  shifter: "cambio",
-};
-
-function navigateToAdjacentForDefinition(definitionKey) {
-  const targetId = DEFINITION_ADJACENT_MAP[definitionKey];
-  if (!targetId) return;
-  const cfg = adjacentConfigs.find((c) => c.id === targetId);
-  if (!cfg || !isConfigVisible(cfg)) return;
-  const viewKey = `adjacent:${targetId}`;
-  setActiveView(viewKey, cfg.title);
-  activateTreeItemByView(viewKey);
 }
 
 function renderCalibrationTree() {
@@ -367,27 +355,41 @@ function setActiveView(viewKey, title) {
       // Definir callbacks para esta configuração
       headerControls.onApply(() => {
         console.log(`[setActiveView] onApply chamado para: ${configId}`);
+        addSaveFooter("Aplicando configuracao...");
         // Chamar apply na iframe da configuração
         const iframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
         console.log(`[setActiveView] iframe encontrada?`, !!iframe);
         if (iframe?.contentWindow?.applyConfig) {
           console.log(`[setActiveView] Chamando applyConfig...`);
-          return iframe.contentWindow.applyConfig();
+          return Promise.resolve(iframe.contentWindow.applyConfig())
+            .then(() => addSaveFooter("Configuracao aplicada."))
+            .catch((err) => {
+              console.error("[setActiveView] Erro ao aplicar:", err);
+              setSaveStatus("Falha ao aplicar configuracao.");
+            });
         } else {
           console.log(`[setActiveView] applyConfig não encontrada na iframe`);
+          setSaveStatus("Falha ao aplicar: interface nao disponivel.");
         }
       });
       
       headerControls.onRefresh(() => {
         console.log(`[setActiveView] onRefresh chamado para: ${configId}`);
+        addSaveFooter("Recarregando configuracao...");
         // Chamar refresh na iframe da configuração
         const iframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
         console.log(`[setActiveView] iframe encontrada?`, !!iframe);
         if (iframe?.contentWindow?.loadConfig) {
           console.log(`[setActiveView] Chamando loadConfig...`);
-          return iframe.contentWindow.loadConfig();
+          return Promise.resolve(iframe.contentWindow.loadConfig())
+            .then(() => addSaveFooter("Configuracao recarregada."))
+            .catch((err) => {
+              console.error("[setActiveView] Erro ao recarregar:", err);
+              setSaveStatus("Falha ao recarregar configuracao.");
+            });
         } else {
           console.log(`[setActiveView] loadConfig não encontrada na iframe`);
+          setSaveStatus("Falha ao recarregar: interface nao disponivel.");
         }
       });
     } else {
@@ -481,7 +483,10 @@ function renderClasses() {
     },
   ];
 
-  if (countEl) countEl.textContent = String(definitions.length);
+  const extraCount =
+    (ioDefinitions?.ain?.available ? 1 : 0) +
+    (ioDefinitions?.din?.available ? 1 : 0);
+  if (countEl) countEl.textContent = String(definitions.length + extraCount);
 
   definitions.forEach((definition) => {
     const data = classDefinitions?.[definition.key] || {};
@@ -540,19 +545,18 @@ function renderClasses() {
         } else if (onOption) {
           select.value = String(onOption.id);
         }
-        select.addEventListener("change", () => {
+        select.addEventListener("change", async () => {
           const value = parseInt(select.value, 10);
           classDefinitions[definition.key] = {
             ...data,
             current: Number.isNaN(value) ? null : value,
           };
-          renderCalibrationTree();
-          applyClassDefinitions();
+          await applyClassDefinitions();
         });
       }
 
       if (toggle) {
-        toggle.addEventListener("change", () => {
+        toggle.addEventListener("change", async () => {
           let value = 0; // off
           if (toggle.checked) {
             if (select && select.value) {
@@ -576,8 +580,7 @@ function renderClasses() {
             ...data,
             current: value,
           };
-          renderCalibrationTree();
-          applyClassDefinitions();
+          await applyClassDefinitions();
         });
       }
       return;
@@ -618,12 +621,62 @@ function renderClasses() {
           ...data,
           current: Number.isNaN(value) ? null : value,
         };
-        renderCalibrationTree();
-        // Auto-navigate to the matching adjacent config for this definition
-        navigateToAdjacentForDefinition(definition.key);
       });
     }
   });
+
+  const buildIoCard = (ioKey, label, icon, description) => {
+    const data = ioDefinitions?.[ioKey] || {};
+    if (!data.available) return;
+    const item = document.createElement("div");
+    item.className = "class-item class-definition";
+    const isEnabled = Boolean(data.active);
+    const toggleDisabled = !lastStatus?.connected || data.id === null || data.id === undefined;
+    item.innerHTML = `
+      <div class="class-name">
+        <i class="bi ${icon}"></i>
+        <span>${label}</span>
+      </div>
+      <div class="class-desc">${description}</div>
+      <label class="toggle-switch">
+        <input type="checkbox" class="class-definition-toggle" data-io="${ioKey}" ${
+          toggleDisabled ? "disabled" : ""
+        } ${isEnabled ? "checked" : ""}>
+        <span class="toggle-slider"></span>
+        <span class="toggle-state">${isEnabled ? "Ligado" : "Desligado"}</span>
+      </label>
+    `;
+    container.appendChild(item);
+
+    const toggle = item.querySelector(".class-definition-toggle");
+    const labelEl = item.querySelector(".toggle-state");
+    if (toggle) {
+      toggle.addEventListener("change", async () => {
+        const id = data.id;
+        if (id === null || id === undefined) return;
+        const enabled = toggle.checked;
+        const bitmask = Number(data.bitmask || 0);
+        const newMask = enabled ? (bitmask | (1 << id)) : (bitmask & ~(1 << id));
+        const cmd = ioKey === "ain" ? "aintypes" : "btntypes";
+        addSaveFooter(`Atualizando ${label}...`);
+        try {
+          await window.pywebview?.api?.serial_set_value("main", cmd, newMask, 0, null);
+          await loadIoDefinitions();
+          await loadActiveClasses();
+          renderCalibrationTree();
+          renderClasses();
+          if (labelEl) labelEl.textContent = enabled ? "Ligado" : "Desligado";
+          addSaveFooter(`${label} ${enabled ? "ligado" : "desligado"}.`);
+        } catch (err) {
+          console.error("[IO] toggle error:", err);
+          setSaveStatus(`Falha ao atualizar ${label}.`);
+        }
+      });
+    }
+  };
+
+  buildIoCard("ain", "AIN (Analógico)", "bi-filter-circle", "Ativa/desativa a classe de entradas analógicas.");
+  buildIoCard("din", "DIN (Digital)", "bi-toggle-on", "Ativa/desativa a classe de entradas digitais.");
 }
 
 function renderPorts(ports) {
@@ -730,7 +783,7 @@ function updateStatus(status) {
   }
   
   setText("tempValue", status?.temp ? `${status.temp} °C` : "--");
-  setText("connValue", connected ? "Conectado" : "--");
+  setText("connValue", connected ? (status?.hw || "--") : "--");
   updateMonitoringLock(connected);
 }
 
@@ -2030,6 +2083,11 @@ async function loadClassDefinitions() {
       encoder: { current: null, classes: [] },
       shifter: { current: null, modes: [] },
     };
+    appliedClassDefinitions = {
+      driver: { current: null, classes: [] },
+      encoder: { current: null, classes: [] },
+      shifter: { current: null, modes: [] },
+    };
     renderClasses();
     return;
   }
@@ -2040,8 +2098,71 @@ async function loadClassDefinitions() {
     encoder: data?.encoder || { current: null, classes: [] },
     shifter: data?.shifter || { current: null, modes: [] },
   };
+  appliedClassDefinitions = {
+    driver: data?.driver || { current: null, classes: [] },
+    encoder: data?.encoder || { current: null, classes: [] },
+    shifter: data?.shifter || { current: null, modes: [] },
+  };
   renderClasses();
   renderCalibrationTree();
+}
+
+function parseLsList(reply) {
+  if (!reply) return [];
+  return reply
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(":", 3);
+      if (parts.length < 3) return null;
+      const id = parseInt(parts[0], 10);
+      return Number.isNaN(id) ? null : { id, name: parts[2] };
+    })
+    .filter(Boolean);
+}
+
+async function loadIoDefinitions() {
+  if (!window.pywebview?.api || !lastStatus?.connected) {
+    ioDefinitions = {
+      ain: { id: null, name: "AIN-Pins", active: false, available: false, bitmask: 0 },
+      din: { id: null, name: "D-Pins", active: false, available: false, bitmask: 0 },
+    };
+    return;
+  }
+  const [lsain, aintypes, lsbtn, btntypes] = await Promise.all([
+    window.pywebview.api.serial_request("main", "lsain", 0, null, "?"),
+    window.pywebview.api.serial_request("main", "aintypes", 0, null, "?"),
+    window.pywebview.api.serial_request("main", "lsbtn", 0, null, "?"),
+    window.pywebview.api.serial_request("main", "btntypes", 0, null, "?"),
+  ]);
+
+  const ainList = parseLsList(lsain);
+  const dinList = parseLsList(lsbtn);
+  const ainEntry =
+    ainList.find((s) => s.id === 0) || ainList.find((s) => /ain|pins|analog/i.test(s.name || ""));
+  const dinEntry =
+    dinList.find((s) => s.id === 0) || dinList.find((s) => /d-pins|dpin|digital|din/i.test(s.name || ""));
+
+  const aMask = parseInt(aintypes, 10);
+  const bMask = parseInt(btntypes, 10);
+
+  ioDefinitions = {
+    ain: {
+      id: ainEntry?.id ?? null,
+      name: ainEntry?.name || "AIN-Pins",
+      active: ainEntry ? (Number.isNaN(aMask) ? false : (aMask & (1 << ainEntry.id)) !== 0) : false,
+      available: Boolean(ainEntry),
+      bitmask: Number.isNaN(aMask) ? 0 : aMask,
+    },
+    din: {
+      id: dinEntry?.id ?? null,
+      name: dinEntry?.name || "D-Pins",
+      active: dinEntry ? (Number.isNaN(bMask) ? false : (bMask & (1 << dinEntry.id)) !== 0) : false,
+      available: Boolean(dinEntry),
+      bitmask: Number.isNaN(bMask) ? 0 : bMask,
+    },
+  };
 }
 
 async function loadActiveClasses() {
@@ -2093,6 +2214,8 @@ async function connectSelected() {
   await loadProfiles();
   await loadClassDefinitions();
   await loadActiveClasses();
+  await loadIoDefinitions();
+  renderClasses();
   await loadMainClasses();
   await loadJoystickRates();
   startConnectionCheck();
@@ -2109,6 +2232,15 @@ async function disconnectCurrent() {
     driver: { current: null, classes: [] },
     encoder: { current: null, classes: [] },
     shifter: { current: null, modes: [] },
+  };
+  appliedClassDefinitions = {
+    driver: { current: null, classes: [] },
+    encoder: { current: null, classes: [] },
+    shifter: { current: null, modes: [] },
+  };
+  ioDefinitions = {
+    ain: { id: null, name: "AIN-Pins", active: false, available: false, bitmask: 0 },
+    din: { id: null, name: "D-Pins", active: false, available: false, bitmask: 0 },
   };
   setActiveView("dashboard", "Painel");
   activateTreeItemByView("dashboard");
@@ -2223,6 +2355,7 @@ async function importProfile() {
 
 async function applyClassDefinitions() {
   if (!window.pywebview?.api || !lastStatus?.connected) return;
+  setSaveStatus("Aplicando definicoes de classes...");
   const payload = {
     driver: classDefinitions?.driver?.current ?? null,
     encoder: classDefinitions?.encoder?.current ?? null,
@@ -2230,7 +2363,7 @@ async function applyClassDefinitions() {
   };
   const result = await withPollingPaused(() => window.pywebview.api.apply_class_definitions(payload));
   if (result?.ok) {
-    setSaveStatus("Definicoes de classes enviadas.");
+    setSaveStatus("Definicoes de classes aplicadas.");
     await loadClassDefinitions();
     await loadActiveClasses();
     return;
@@ -2298,6 +2431,7 @@ async function refreshAll() {
     setSaveStatus("Carregando... 5");
     await loadAdjacentConfigs();
     await loadClassDefinitions();
+    await loadIoDefinitions();
     setSaveStatus("Carregando... 6");
     await loadActiveClasses();
     setSaveStatus("Carregando... 7");

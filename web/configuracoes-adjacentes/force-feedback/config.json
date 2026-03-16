@@ -4,6 +4,6 @@
   "icon": "bi-speedometer2",
   "class_id": 1,
   "clsname_match": ["ffb", "force", "ffbwheel"],
-  "show_when_connected": true,
+  "show_when_connected": false,
   "requires_active": true
 }

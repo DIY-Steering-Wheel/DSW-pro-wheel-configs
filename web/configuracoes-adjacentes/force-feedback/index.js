@@ -6,22 +6,6 @@ let damperGain = 2;
 let frictionGain = 2;
 let inertiaGain = 2;
 
-function parseList(reply) {
-  if (!reply) return [];
-  return reply
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const parts = s.split(":");
-      if (parts.length < 2) return null;
-      const name = parts[0];
-      const id = parseInt(parts[1], 10);
-      return Number.isNaN(id) ? null : { id, name };
-    })
-    .filter(Boolean);
-}
-
 function mapInfoString(reply) {
   if (!reply) return {};
   const result = {};
@@ -87,23 +71,6 @@ async function loadFfb() {
   if (!api) {
     if (hint) hint.textContent = "Sem API";
     return;
-  }
-
-  /* HID Report Rate */
-  const rateList = await api.serial_request("main", "hidsendspd", 0, null, "!");
-  const rateCur = await api.serial_request("main", "hidsendspd", 0, null, "?");
-  const rateSelect = document.getElementById("ffbReportRate");
-  if (rateSelect) {
-    const modes = parseList(rateList);
-    const cur = parseInt(rateCur, 10);
-    rateSelect.innerHTML = "";
-    modes.forEach((m) => {
-      const opt = document.createElement("option");
-      opt.value = String(m.id);
-      opt.textContent = m.name;
-      if (m.id === cur) opt.selected = true;
-      rateSelect.appendChild(opt);
-    });
   }
 
   /* Gain scalers */
@@ -184,12 +151,6 @@ async function loadFfb() {
 async function applyFfb() {
   const hint = document.getElementById("ffbHint");
   if (!api) return;
-
-  const rateSelect = document.getElementById("ffbReportRate");
-  if (rateSelect) {
-    const val = parseInt(rateSelect.value, 10);
-    if (!Number.isNaN(val)) await api.serial_set_value("main", "hidsendspd", val, 0, null);
-  }
 
   if (hint) hint.textContent = "Aplicado";
 }
