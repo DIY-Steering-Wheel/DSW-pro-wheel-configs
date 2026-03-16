@@ -196,8 +196,6 @@ async function applyFfb() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadFfb();
-  document.getElementById("refreshFfb")?.addEventListener("click", loadFfb);
-  document.getElementById("applyFfb")?.addEventListener("click", applyFfb);
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -212,3 +210,7 @@ window.addEventListener("message", (e) => {
     else stopPolling();
   }
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadFfb;
+window.applyConfig = applyFfb;

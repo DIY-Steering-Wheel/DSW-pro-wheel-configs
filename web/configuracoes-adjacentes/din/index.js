@@ -206,8 +206,6 @@ async function applyDin() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadDin();
-  document.getElementById("refreshDin")?.addEventListener("click", () => { loadRetries = 0; loadDin(); });
-  document.getElementById("applyDin")?.addEventListener("click", applyDin);
 
   // Activation button
   document.getElementById("btnActivateDin")?.addEventListener("click", async () => {
@@ -244,3 +242,7 @@ window.addEventListener("message", (e) => {
     else stopPolling();
   }
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadDin;
+window.applyConfig = applyDin;

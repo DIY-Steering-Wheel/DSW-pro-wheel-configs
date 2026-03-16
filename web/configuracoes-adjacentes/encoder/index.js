@@ -185,10 +185,12 @@ async function applyEncoder() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadEncoder();
-  document.getElementById("refreshEncoder")?.addEventListener("click", loadEncoder);
-  document.getElementById("applyEncoder")?.addEventListener("click", applyEncoder);
   document.getElementById("encoderSelect")?.addEventListener("change", (e) => {
     const id = parseInt(e.target.value, 10);
     if (!Number.isNaN(id)) loadEncoderSettings(id);
   });
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadEncoder;
+window.applyConfig = applyEncoder;

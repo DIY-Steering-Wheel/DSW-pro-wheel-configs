@@ -129,14 +129,14 @@
           "cls": "fx",
           "instance": 0,
           "cmd": "filterCfQ",
-          "value": "70"
+          "value": "127"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "spring",
-          "value": "64"
+          "value": "134"
         },
         {
           "fullname": "Effects",

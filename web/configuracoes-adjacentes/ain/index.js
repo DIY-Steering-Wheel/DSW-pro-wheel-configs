@@ -376,10 +376,6 @@ function refreshAin() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadAin();
-  document.getElementById("refreshAin")?.addEventListener("click", refreshAin);
-  document.getElementById("applyAin")?.addEventListener("click", applyAin);
-  document.getElementById("ainAutorange")?.addEventListener("change", updateLimitsCard);
-
   // Activation button
   document.getElementById("btnActivateAin")?.addEventListener("click", async () => {
     const btn = document.getElementById("btnActivateAin");
@@ -414,3 +410,7 @@ window.addEventListener("message", (e) => {
     else stopPolling();
   }
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadAin;
+window.applyConfig = applyAin;

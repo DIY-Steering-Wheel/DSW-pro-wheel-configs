@@ -73,6 +73,8 @@ async function applyPwm() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadPwm();
-  document.getElementById("refreshPwm")?.addEventListener("click", loadPwm);
-  document.getElementById("applyPwm")?.addEventListener("click", applyPwm);
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadPwm;
+window.applyConfig = applyPwm;

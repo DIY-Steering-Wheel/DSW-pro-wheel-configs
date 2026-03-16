@@ -68,10 +68,12 @@ async function applyShifter() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadShifter();
-  document.getElementById("refreshShifter")?.addEventListener("click", loadShifter);
-  document.getElementById("applyShifter")?.addEventListener("click", applyShifter);
   document.getElementById("shifterToggle")?.addEventListener("change", () => {
     const select = document.getElementById("shifterMode");
     if (select) select.disabled = !document.getElementById("shifterToggle")?.checked;
   });
 });
+
+// API expected by the parent header controls
+window.loadConfig = loadShifter;
+window.applyConfig = applyShifter;

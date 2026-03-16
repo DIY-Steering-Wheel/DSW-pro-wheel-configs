@@ -264,12 +264,6 @@ function renderCalibrationTree() {
     return;
   }
 
-  // Add section header
-  const header = document.createElement("div");
-  header.className = "section-header tree-section-header";
-  header.textContent = "Configurações";
-  container.appendChild(header);
-
   visible.forEach((cfg) => {
     const item = document.createElement("div");
     item.className = "tree-item";
@@ -348,16 +342,63 @@ function notifyIframeVisibility(activeViewKey) {
 }
 
 function setActiveView(viewKey, title) {
+  console.log(`[setActiveView] Chamado com viewKey: ${viewKey}`);
+  console.log(`[setActiveView] headerControls existe?`, typeof headerControls !== 'undefined');
+  
+  const isAdjacent = String(viewKey).startsWith("adjacent:");
+  console.log(`[setActiveView] isAdjacent: ${isAdjacent}`);
   currentViewKey = viewKey || "dashboard";
   if (!isMonitoringView(viewKey)) {
     stopMonitoringPolling();
   }
   // Pause FFB polling when viewing adjacent config iframes to free serial bus
-  const isAdjacentView = viewKey && viewKey.startsWith("adjacent-");
+  const isAdjacentView = viewKey && viewKey.startsWith("adjacent:");
   if (isAdjacentView) {
     stopFfbPolling();
+    // Mostrar botões Aplicar/Atualizar no header para esta configuração
+    const configId = viewKey.replace("adjacent:", "");
+    const config = adjacentConfigs.find(c => c.id === configId);
+    console.log(`[setActiveView] Adjacent view: ${viewKey}, configId: ${configId}, config found: ${!!config}`);
+    
+    if (config && typeof headerControls !== 'undefined') {
+      console.log(`[setActiveView] Mostrando botões para: ${config.title}`);
+      headerControls.showActionsFor(configId, config.title);
+      
+      // Definir callbacks para esta configuração
+      headerControls.onApply(() => {
+        console.log(`[setActiveView] onApply chamado para: ${configId}`);
+        // Chamar apply na iframe da configuração
+        const iframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
+        console.log(`[setActiveView] iframe encontrada?`, !!iframe);
+        if (iframe?.contentWindow?.applyConfig) {
+          console.log(`[setActiveView] Chamando applyConfig...`);
+          return iframe.contentWindow.applyConfig();
+        } else {
+          console.log(`[setActiveView] applyConfig não encontrada na iframe`);
+        }
+      });
+      
+      headerControls.onRefresh(() => {
+        console.log(`[setActiveView] onRefresh chamado para: ${configId}`);
+        // Chamar refresh na iframe da configuração
+        const iframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
+        console.log(`[setActiveView] iframe encontrada?`, !!iframe);
+        if (iframe?.contentWindow?.loadConfig) {
+          console.log(`[setActiveView] Chamando loadConfig...`);
+          return iframe.contentWindow.loadConfig();
+        } else {
+          console.log(`[setActiveView] loadConfig não encontrada na iframe`);
+        }
+      });
+    } else {
+      console.log(`[setActiveView] headerControls não disponível ou config não encontrada`);
+    }
   } else {
     startFfbPolling();
+    // Esconder botões quando não estiver em configuração adjacente
+    if (typeof headerControls !== 'undefined') {
+      headerControls.hideActions();
+    }
   }
   Object.values(VIEW_IDS).forEach((id) => {
     const el = document.getElementById(id);
@@ -857,7 +898,7 @@ function startConnectionCheck() {
     if (!window.pywebview?.api) return;
     // Skip health check when an adjacent config iframe is active
     // (its polling proves the serial link is alive)
-    if (currentViewKey && currentViewKey.startsWith("adjacent-")) {
+    if (currentViewKey && currentViewKey.startsWith("adjacent:")) {
       healthFailCount = 0;
       return;
     }
@@ -1452,8 +1493,9 @@ function showFirmwareModal() {
               <div class="firmware-file">Arquivo: <span class="firmware-file-name">Nenhum selecionado</span></div>
               <label class="firmware-option">
                 <input type="checkbox" class="firmware-mass-erase" />
-                Full erase (apaga firmware e configurações)
+                Erase durante o envio (apaga antes de gravar o firmware)
               </label>
+              <div class="firmware-hint">Esta opção é usada junto com "Enviar firmware".</div>
               <div class="btn-grid-1">
                 <button class="btn-outline firmware-enter" title="Envia comando DFU ao hardware e desconecta a serial">
                   <i class="bi bi-arrow-repeat"></i>
@@ -1467,9 +1509,9 @@ function showFirmwareModal() {
                   <i class="bi bi-upload"></i>
                   Enviar firmware
                 </button>
-                <button class="btn-danger firmware-erase" disabled title="Apaga TUDO: firmware e configurações">
+                <button class="btn-danger firmware-erase" disabled title="Apaga o chip sem enviar firmware">
                   <i class="bi bi-exclamation-triangle"></i>
-                  Full erase
+                  Erase somente
                 </button>
               </div>
             </div>
@@ -1507,16 +1549,47 @@ function showFirmwareModal() {
 
   let firstFail = true;
   let dfuDeviceFound = false;
+  let lastProbeState = null;
+  let lastProbeLogAt = 0;
+  let lastBackendLog = [];
+  const uiLog = [];
+  const MAX_UI_LOG = 120;
+
+  const renderLog = (backendLog = []) => {
+    if (!logEl) return;
+    const merged = [...backendLog, ...uiLog];
+    logEl.innerHTML = merged.map((line) => `<div class="log-line log-info">${line}</div>`).join("");
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const appendLog = (msg) => {
+    if (!msg) return;
+    uiLog.push(msg);
+    if (uiLog.length > MAX_UI_LOG) uiLog.splice(0, uiLog.length - MAX_UI_LOG);
+    renderLog(lastBackendLog);
+  };
+
+  const maybeLogSearching = () => {
+    const now = Date.now();
+    if (now - lastProbeLogAt > 3000) {
+      appendLog("Nenhum dispositivo DFU. Tentando novamente...");
+      lastProbeLogAt = now;
+    }
+  };
 
   const renderStatus = (data) => {
     if (!data) return;
     const dfuCount = Number(data.dfu_count || 0);
     const dfuOk = data.dfu_ok !== false;
+    const probeState = dfuOk ? `count:${dfuCount}` : `error:${data.dfu_error || "unknown"}`;
 
     if (dfuStateEl) {
       if (!dfuOk && data.dfu_error) {
         dfuStateEl.textContent = "Erro ao acessar USB";
         dfuStateEl.style.color = "var(--danger)";
+        if (probeState !== lastProbeState) {
+          appendLog(`Erro ao acessar USB: ${data.dfu_error}`);
+        }
       } else if (dfuCount === 0) {
         if (firstFail) {
           dfuStateEl.textContent = "Procurando dispositivo DFU...";
@@ -1530,6 +1603,7 @@ function showFirmwareModal() {
           dfuStateEl.style.color = "var(--warning, #ffc107)";
         }
         dfuDeviceFound = false;
+        maybeLogSearching();
       } else if (dfuCount === 1) {
         dfuStateEl.textContent = "Dispositivo DFU encontrado";
         dfuStateEl.style.color = "var(--success, #53ffba)";
@@ -1540,9 +1614,12 @@ function showFirmwareModal() {
       } else {
         dfuStateEl.textContent = `Multiplos dispositivos (${dfuCount})`;
         dfuStateEl.style.color = "var(--warning, #ffc107)";
-        appendLog("Multiplos dispositivos DFU detectados. Desconecte outros para evitar erros.");
+        if (probeState !== lastProbeState) {
+          appendLog("Multiplos dispositivos DFU detectados. Desconecte outros para evitar erros.");
+        }
       }
     }
+    lastProbeState = probeState;
 
     if (data.selected) {
       const fname = data.selected.split(/[\\/]/).pop();
@@ -1555,27 +1632,18 @@ function showFirmwareModal() {
     progressBar.style.width = `${progress}%`;
     progressText.textContent = `${progress}%`;
 
-    // Render logs from backend
-    const logs = data.log || [];
-    if (logs.length > 0) {
-      logEl.innerHTML = logs.map((line) => `<div class="log-line log-info">${line}</div>`).join("");
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    // Render logs from backend (merge with UI logs)
+    lastBackendLog = Array.isArray(data.log) ? data.log : [];
+    renderLog(lastBackendLog);
 
     const hasDevice = dfuCount >= 1 && dfuOk;
-    if (enterBtn) enterBtn.disabled = !lastStatus?.connected || data.busy;
-    if (selectBtn) selectBtn.disabled = !hasDevice;
-    if (uploadBtn) uploadBtn.disabled = !hasDevice || !data.selected || data.busy;
-    if (eraseBtn) eraseBtn.disabled = !hasDevice || data.busy;
-  };
-
-  const appendLog = (msg) => {
-    if (!logEl) return;
-    const div = document.createElement("div");
-    div.className = "log-line log-info";
-    div.textContent = msg;
-    logEl.appendChild(div);
-    logEl.scrollTop = logEl.scrollHeight;
+    const serialConnected = Boolean(lastStatus?.connected);
+    const allowDfuOps = hasDevice && !data.busy;
+    if (enterBtn) enterBtn.disabled = !serialConnected || data.busy;
+    if (selectBtn) selectBtn.disabled = !allowDfuOps;
+    if (uploadBtn) uploadBtn.disabled = !allowDfuOps || !data.selected;
+    if (eraseBtn) eraseBtn.disabled = !allowDfuOps;
+    if (massErase) massErase.disabled = !allowDfuOps;
   };
 
   const refreshStatus = async () => {
@@ -1616,9 +1684,9 @@ function showFirmwareModal() {
 
   modalEl.querySelector(".firmware-erase").addEventListener("click", async () => {
     showConfirmModal({
-      title: "Full chip erase",
-      body: "<p>Apagar completamente o chip?</p><p><strong>Isto apaga TUDO: firmware e configuracoes.</strong></p><p>Voce pode precisar de um programador ou conectar boot0 para reflashar!</p>",
-      confirmText: "Apagar tudo",
+      title: "Erase somente (sem gravar firmware)",
+      body: "<p>Apagar completamente o chip sem enviar firmware?</p><p><strong>Isto apaga TUDO: firmware e configuracoes.</strong></p><p>Voce pode precisar de um programador ou conectar boot0 para reflashar!</p>",
+      confirmText: "Apagar chip",
       confirmIcon: "bi-exclamation-triangle",
       onConfirm: async () => {
         if (eraseBtn) eraseBtn.disabled = true;
@@ -2243,6 +2311,11 @@ async function refreshAll() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Criar instância de HeaderControls quando DOM está pronto
+  headerControls = new HeaderControls();
+  headerControls.init();
+  console.log('[App] HeaderControls inicializado');
+  
   await refreshAll();
   window.DswMonitoring?.init?.();
   updateMonitoringLock(false);

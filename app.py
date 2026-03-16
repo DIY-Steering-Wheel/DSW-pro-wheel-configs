@@ -588,12 +588,12 @@ def main():
         "DSW Pro Wheel Configurator",
         index_path,
         js_api=api,
-      
+        
         width=1200,
         height=780,
         min_size=(980, 620),
     )
-    webview.start()
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":
