@@ -13,17 +13,32 @@
         <h2>DIN (Digital)</h2>
         <button id="refreshDin" class="btn-outline" type="button">Atualizar</button>
       </div>
-      <div class="adjacent-card">
-        <div class="adjacent-row">
-          <div class="adjacent-label">Entradas ativas</div>
-          <div id="dinCount">--</div>
+      <!-- Activation overlay (shown when D-Pins is not active) -->
+      <div id="dinActivationOverlay" class="activation-overlay" style="display:none;">
+        <div class="activation-card">
+          <i class="activation-icon">&#9888;</i>
+          <h3>D-Pins não está ativo</h3>
+          <p>O tipo D-Pins precisa ser ativado para configurar os botões digitais.</p>
+          <button id="btnActivateDin" class="btn-primary-sm activation-btn" type="button">Ativar D-Pins</button>
+          <span id="activationHint" class="adjacent-hint"></span>
         </div>
-        <div id="dinPins" class="pin-grid"></div>
-        <div class="adjacent-row">
+      </div>
+
+      <!-- Main content (hidden when not active) -->
+      <div id="dinMainContent">
+      <div class="adjacent-card">
+        <div class="adjacent-section">
+          <div class="pin-grid-header">
+            <span class="pin-col-label">Pins</span>
+            <span class="pin-col-label">Pulse mode</span>
+          </div>
+          <div id="dinPins" class="pin-grid"></div>
+        </div>
+        <div class="adjacent-section">
           <label class="toggle-switch">
             <input id="dinInvert" type="checkbox" />
             <span class="toggle-slider"></span>
-            <span>Invertido</span>
+            <span>Inverter polaridade</span>
           </label>
         </div>
         <div class="adjacent-row">
@@ -31,6 +46,7 @@
           <span class="adjacent-hint" id="dinHint">--</span>
         </div>
       </div>
+      </div> <!-- /dinMainContent -->
     </div>
     <script src="index.js"></script>
   </body>

@@ -17,6 +17,12 @@ let terminalLog = [];
 let errorsList = [];
 let profilesCache = { profiles: [], current: "None" };
 let autoConnectAttempted = false;
+let connectionCheckTimer = null;
+let reconnectAttempts = 0;
+let healthFailCount = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_HEALTH_FAIL = 5;
+const CONNECTION_CHECK_INTERVAL = 8000;
 
 const fallbackMenu = [
   { key: "dashboard", label: "Painel", icon: "bi-grid-1x2" },
@@ -118,7 +124,10 @@ function setTopbarTitle(title) {
 
 function ensureAdjacentViews() {
   const container = document.getElementById("adjacentViews");
-  if (!container) return;
+  if (!container) {
+    console.warn("[DSW] ensureAdjacentViews: #adjacentViews container not found");
+    return;
+  }
   adjacentConfigs.forEach((cfg) => {
     const viewId = `view-adjacent-${cfg.id}`;
     if (document.getElementById(viewId)) {
@@ -128,24 +137,68 @@ function ensureAdjacentViews() {
     section.id = viewId;
     section.className = "view-panel";
     section.dataset.view = `adjacent:${cfg.id}`;
+    // Lazy-load: store URL in data-src, load iframe only when user opens the view
     section.innerHTML = `
       <div class="analysis-card">
         <div class="card-body">
-          <iframe class="adjacent-frame" src="${cfg.view}" title="${cfg.title}"></iframe>
+          <iframe class="adjacent-frame" data-src="${cfg.view}" title="${cfg.title}"></iframe>
         </div>
       </div>
     `;
     container.appendChild(section);
+    console.log("[DSW] ensureAdjacentViews: created panel (lazy):", viewId);
   });
 }
 
 function isConfigVisible(cfg) {
   if (!cfg) return false;
   
-  // Se requer_active é false, sempre mostra
+  // If requires_active is false, always show
   if (cfg.requires_active === false) return true;
   
-  // ESTRATÉGIA 1: Verificar clsname_match contra activeClasses (funciona para classes ativas instantaneamente)
+  // Must be connected to show any active-dependent config
+  if (!lastStatus?.connected) return false;
+
+  // Show when connected flag — always visible once connected
+  if (cfg.show_when_connected) return true;
+
+  let visible = false;
+  
+  // Strategy 1: Check definition_key (driver, encoder, shifter)
+  if (cfg.definition_key) {
+    const def = classDefinitions?.[cfg.definition_key];
+    if (def && def.current !== null && def.current !== undefined) {
+      // For shifter: current > 0 means active
+      if (cfg.definition_key === "shifter") {
+        visible = Number(def.current) > 0;
+      } else {
+        // For driver/encoder: has a current selection
+        if (Array.isArray(cfg.definition_match) && cfg.definition_match.length > 0) {
+          // Check if current matches a definition_match pattern
+          const currentId = def.current;
+          const idMatches = cfg.definition_match.some(
+            (needle) => String(needle).toLowerCase() === String(currentId).toLowerCase()
+          );
+          if (idMatches) {
+            visible = true;
+          } else {
+            // Check by name
+            const current = (def.classes || []).find((entry) => entry.id === currentId);
+            if (current) {
+              const name = String(current.name || "").toLowerCase();
+              visible = cfg.definition_match.some((needle) => name.includes(String(needle).toLowerCase()));
+            }
+          }
+        } else {
+          // No definition_match filter, just needs a current value
+          visible = true;
+        }
+      }
+    }
+    if (visible) return true;
+  }
+  
+  // Strategy 2: Check clsname_match against active classes
   const clsnameMatches = Array.isArray(cfg.clsname_match)
     ? cfg.clsname_match
     : cfg.clsname_match
@@ -154,89 +207,42 @@ function isConfigVisible(cfg) {
   
   if (clsnameMatches.length > 0) {
     const hasActiveMatch = activeClasses.some((entry) => {
-      const clsname = String(entry.clsname || entry.name || entry.label || "").toLowerCase();
-      return clsnameMatches.some((needle) => clsname.includes(String(needle).toLowerCase()));
+      const clsname = String(entry.clsname || entry.name || "").toLowerCase();
+      return clsnameMatches.some((needle) => {
+        const n = String(needle).toLowerCase();
+        // Exact match or word-boundary match (avoid "ain" matching "main")
+        return clsname === n || clsname.startsWith(n) || new RegExp('\\b' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(clsname);
+      });
     });
-    
-    if (hasActiveMatch) {
-      console.debug(`[isConfigVisible] ${cfg.id}: matched active class via clsname_match`);
-      return true;
-    }
+    if (hasActiveMatch) return true;
   }
   
-  // ESTRATÉGIA 2: Se tem definition_key, verifica a definição selecionada
-  if (cfg.definition_key) {
-    const def = classDefinitions?.[cfg.definition_key];
-    
-    // Se não tem def ou current é null, não está disponível
-    if (!def || def.current === null || def.current === undefined) {
-      console.debug(`[isConfigVisible] ${cfg.id}: definition_key="${cfg.definition_key}" não têm valor atual`);
-      return false;
-    }
-    
-    // Se não tem definition_match, e tem um current, assume que está visível
-    const matchers = Array.isArray(cfg.definition_match)
-      ? cfg.definition_match
-      : cfg.definition_match
-        ? [cfg.definition_match]
-        : [];
-    
-    if (matchers.length === 0) {
-      console.debug(`[isConfigVisible] ${cfg.id}: sem definition_match, mas tem current`);
-      return true;
-    }
-
-    if (cfg.definition_key === "encoder") {
-      console.debug(`[isConfigVisible] ${cfg.id}: encoder com current definido, exibindo`);
-      return true;
-    }
-    
-    const currentId = def.current;
-    const idMatches = matchers.some(
-      (needle) => String(needle).toLowerCase() === String(currentId).toLowerCase()
-    );
-    if (idMatches) {
-      console.debug(`[isConfigVisible] ${cfg.id}: matched current id "${currentId}"`);
-      return true;
-    }
-    
-    // Se tem matchers, verifica se o nome atual bate
-    const hasClassList = Array.isArray(def.classes) && def.classes.length > 0;
-    if (hasClassList) {
-      const current = def.classes.find((entry) => entry.id === def.current);
-      if (current) {
-        const name = String(current?.name || "").toLowerCase();
-        const matches = matchers.some((needle) => name.includes(String(needle).toLowerCase()));
-        if (matches) {
-          console.debug(`[isConfigVisible] ${cfg.id}: matched driver "${name}"`);
-        } else {
-          console.debug(`[isConfigVisible] ${cfg.id}: driver "${name}" não bate com matchers`, matchers);
-        }
-        return matches;
-      }
-    }
-    
-    // Fallback: if has definition_match but can't resolve, still check activeClasses
-    console.debug(`[isConfigVisible] ${cfg.id}: sem nome resolvido via definition, checando activeClasses`);
-    return false;
-  }
-  
-  // Se tem class_id, verifica se está na lista de IDs ativos
+  // Strategy 3: Check class_id in active class IDs
   if (cfg.class_id !== null && cfg.class_id !== undefined) {
-    const isVisible = activeClassIds.has(Number(cfg.class_id));
-    if (!isVisible) {
-      console.debug(`[isConfigVisible] ${cfg.id}: class_id=${cfg.class_id} não está ativo`);
-    }
-    return isVisible;
-  }
-  
-  // Fallback: sem nenhuma regra de matching
-  if (clsnameMatches.length === 0) {
-    console.debug(`[isConfigVisible] ${cfg.id}: sem regras de matching, considerando visível`);
-    return true;
+    return activeClassIds.has(Number(cfg.class_id));
   }
   
   return false;
+}
+
+/**
+ * Map from definition key (driver, encoder, shifter) to adjacent config ids
+ * that should open when the user selects a class in that definition.
+ */
+const DEFINITION_ADJACENT_MAP = {
+  driver: "force-feedback",
+  encoder: "encoder",
+  shifter: "cambio",
+};
+
+function navigateToAdjacentForDefinition(definitionKey) {
+  const targetId = DEFINITION_ADJACENT_MAP[definitionKey];
+  if (!targetId) return;
+  const cfg = adjacentConfigs.find((c) => c.id === targetId);
+  if (!cfg || !isConfigVisible(cfg)) return;
+  const viewKey = `adjacent:${targetId}`;
+  setActiveView(viewKey, cfg.title);
+  activateTreeItemByView(viewKey);
 }
 
 function renderCalibrationTree() {
@@ -244,38 +250,33 @@ function renderCalibrationTree() {
   if (!container) return;
   container.innerHTML = "";
   
-  console.debug("[renderCalibrationTree] Total configs:", adjacentConfigs.length);
-  console.debug("[renderCalibrationTree] adjacentConfigs:", adjacentConfigs);
-  console.debug("[renderCalibrationTree] classDefinitions:", classDefinitions);
-  console.debug("[renderCalibrationTree] activeClasses:", activeClasses);
-  console.debug("[renderCalibrationTree] activeClassIds:", Array.from(activeClassIds));
+  // Ensure view panels exist for all adjacent configs
+  ensureAdjacentViews();
   
+  // Only show configs that are truly visible based on active classes and definitions
   const visible = adjacentConfigs.filter(isConfigVisible);
+  console.log("[DSW] renderCalibrationTree:", adjacentConfigs.length, "total,", visible.length, "visible, connected:", lastStatus?.connected, "activeClasses:", activeClasses.length);
+  adjacentConfigs.forEach((cfg) => {
+    console.log("[DSW]   cfg:", cfg.id, "show_when_connected:", cfg.show_when_connected, "requires_active:", cfg.requires_active, "visible:", isConfigVisible(cfg), "clsname_match:", JSON.stringify(cfg.clsname_match));
+  });
   
-  console.debug("[renderCalibrationTree] Visible configs:", visible.length, visible.map((c) => c.id));
-  
-  let renderList = visible;
-  if (renderList.length === 0 && adjacentConfigs.length > 0) {
-    const definitionFallback = adjacentConfigs.filter((cfg) => {
-      if (!cfg.definition_key) return false;
-      const def = classDefinitions?.[cfg.definition_key];
-      return def && def.current !== null && def.current !== undefined;
-    });
-    if (definitionFallback.length > 0) {
-      console.debug("[renderCalibrationTree] Fallback: showing definition-based configs", definitionFallback.map((c) => c.id));
-      renderList = definitionFallback;
-    } else if (lastStatus?.connected) {
-      console.debug("[renderCalibrationTree] Fallback: showing all adjacent configs");
-      renderList = adjacentConfigs;
-    }
-  }
-  
-  if (renderList.length === 0) {
+  if (visible.length === 0) {
     return;
   }
-  renderList.forEach((cfg) => {
+
+  // Add section header
+  const header = document.createElement("div");
+  header.className = "section-header tree-section-header";
+  header.textContent = "Configurações";
+  container.appendChild(header);
+
+  visible.forEach((cfg) => {
     const item = document.createElement("div");
     item.className = "tree-item";
+    // Preserve active state if this view was already selected
+    if (currentViewKey === `adjacent:${cfg.id}`) {
+      item.classList.add("active");
+    }
     item.setAttribute("data-view", `adjacent:${cfg.id}`);
     item.setAttribute("data-title", cfg.title);
     item.innerHTML = `
@@ -285,6 +286,16 @@ function renderCalibrationTree() {
     container.appendChild(item);
   });
   bindTreeHandlers();
+  
+  // If current view is an adjacent config that is no longer visible, go back to dashboard
+  if (currentViewKey && currentViewKey.startsWith("adjacent:")) {
+    const cfgId = currentViewKey.slice("adjacent:".length);
+    const stillVisible = visible.some((c) => c.id === cfgId);
+    if (!stillVisible) {
+      setActiveView("dashboard", "Painel");
+      activateTreeItemByView("dashboard");
+    }
+  }
 }
 
 function activateTreeItemByView(viewKey) {
@@ -309,6 +320,7 @@ function bindTreeHandlers() {
       }
       const viewKey = item.getAttribute("data-view");
       const title = item.getAttribute("data-title") || "Painel";
+      console.log("[DSW] tree click:", viewKey, title);
       if (isMonitoringView(viewKey)) {
         requestOpenMonitoring(viewKey, title);
         return;
@@ -319,10 +331,33 @@ function bindTreeHandlers() {
   });
 }
 
+/**
+ * Notify all adjacent-config iframes whether they are visible or hidden.
+ * Visible iframes receive {type:'configVisibility', visible:true} and
+ * may resume polling; hidden ones receive visible:false and should pause.
+ */
+function notifyIframeVisibility(activeViewKey) {
+  document.querySelectorAll("[id^='view-adjacent-']").forEach((panel) => {
+    const iframe = panel.querySelector("iframe.adjacent-frame");
+    if (!iframe?.contentWindow) return;
+    const panelId = panel.id; // e.g. "view-adjacent-ain"
+    const configId = panelId.replace("view-adjacent-", "");
+    const isActive = activeViewKey === `adjacent:${configId}`;
+    iframe.contentWindow.postMessage({ type: "configVisibility", visible: isActive }, "*");
+  });
+}
+
 function setActiveView(viewKey, title) {
   currentViewKey = viewKey || "dashboard";
   if (!isMonitoringView(viewKey)) {
     stopMonitoringPolling();
+  }
+  // Pause FFB polling when viewing adjacent config iframes to free serial bus
+  const isAdjacentView = viewKey && viewKey.startsWith("adjacent-");
+  if (isAdjacentView) {
+    stopFfbPolling();
+  } else {
+    startFfbPolling();
   }
   Object.values(VIEW_IDS).forEach((id) => {
     const el = document.getElementById(id);
@@ -330,8 +365,36 @@ function setActiveView(viewKey, title) {
   });
   document.querySelectorAll("[id^='view-adjacent-']").forEach((el) => el.classList.remove("active"));
   const viewEl = getViewElement(viewKey);
-  if (viewEl) viewEl.classList.add("active");
+  if (viewEl) {
+    viewEl.classList.add("active");
+    // Lazy-load iframe: set src from data-src on first activation
+    const iframe = viewEl.querySelector("iframe.adjacent-frame[data-src]");
+    if (iframe && !iframe.getAttribute("src")) {
+      iframe.src = iframe.dataset.src;
+      console.log("[DSW] setActiveView: lazy-loaded iframe:", iframe.dataset.src);
+    }
+    console.log("[DSW] setActiveView: activated", viewKey, "element:", viewEl.id);
+  } else {
+    console.warn("[DSW] setActiveView: view element NOT FOUND for", viewKey);
+    // Fallback: ensure views are created, then retry once
+    ensureAdjacentViews();
+    const retryEl = getViewElement(viewKey);
+    if (retryEl) {
+      retryEl.classList.add("active");
+      // Lazy-load iframe on retry too
+      const iframe = retryEl.querySelector("iframe.adjacent-frame[data-src]");
+      if (iframe && !iframe.getAttribute("src")) {
+        iframe.src = iframe.dataset.src;
+        console.log("[DSW] setActiveView: lazy-loaded iframe (retry):", iframe.dataset.src);
+      }
+      console.log("[DSW] setActiveView: activated after retry", viewKey);
+    } else {
+      console.error("[DSW] setActiveView: STILL not found after retry:", viewKey);
+    }
+  }
   setTopbarTitle(title);
+  // Signal iframes to pause/resume polling so hidden configs don't flood serial
+  notifyIframeVisibility(viewKey);
 }
 
 function requestOpenMonitoring(viewKey, title) {
@@ -391,13 +454,14 @@ function renderClasses() {
     const isShifter = definition.key === "shifter";
 
     if (isShifter) {
-      const offOption = options.find((entry) => entry.id === 0) || options[0];
-      const onOption = options.find((entry) => entry.id !== (offOption?.id ?? -1)) || options[0];
-      const isEnabled = selected !== null && selected !== undefined && (offOption ? selected !== offOption.id : selected > 0);
+      const offOption = options.find((entry) => entry.id === 0);
+      const onOption = options.find((entry) => entry.id !== 0 && entry.id !== (offOption?.id ?? -1)) || options.find((entry) => entry.id !== 0);
+      const isEnabled = selected !== null && selected !== undefined && Number(selected) > 0;
       const optionValues = options
+        .filter((entry) => entry.id !== 0)
         .map((entry) => `<option value="${entry.id}">${optionLabel(entry)}</option>`)
         .join("");
-      const toggleDisabled = isDisabled || options.length === 0;
+      const toggleDisabled = !lastStatus?.connected;
 
       item.innerHTML = `
         <div class="class-name">
@@ -412,7 +476,7 @@ function renderClasses() {
           <span class="toggle-slider"></span>
           <span class="toggle-state">${isEnabled ? "Ligado" : "Desligado"}</span>
         </label>
-        ${options.length > 0 ? `
+        ${optionValues.length > 0 ? `
           <div class="class-select">
             <select class="form-select-sm class-definition-select" data-definition="${definition.key}" ${
               toggleDisabled || !isEnabled ? "disabled" : ""
@@ -429,7 +493,12 @@ function renderClasses() {
       const select = item.querySelector(".class-definition-select");
 
       if (select) {
-        select.value = selected !== null && selected !== undefined ? String(selected) : "";
+        // Set to current value if it's > 0, otherwise first available non-zero mode
+        if (isEnabled && selected) {
+          select.value = String(selected);
+        } else if (onOption) {
+          select.value = String(onOption.id);
+        }
         select.addEventListener("change", () => {
           const value = parseInt(select.value, 10);
           classDefinitions[definition.key] = {
@@ -443,26 +512,28 @@ function renderClasses() {
 
       if (toggle) {
         toggle.addEventListener("change", () => {
-          let value = offOption?.id ?? 0;
+          let value = 0; // off
           if (toggle.checked) {
             if (select && select.value) {
               value = parseInt(select.value, 10);
             } else if (onOption) {
               value = onOption.id;
+            } else {
+              value = 1; // Fallback: mode 1 if no options available
             }
           }
           if (label) {
             label.textContent = toggle.checked ? "Ligado" : "Desligado";
           }
           if (select) {
-            select.disabled = toggleDisabled || !toggle.checked;
-            if (toggle.checked && value !== null && value !== undefined) {
+            select.disabled = !toggle.checked;
+            if (toggle.checked && value > 0) {
               select.value = String(value);
             }
           }
           classDefinitions[definition.key] = {
             ...data,
-            current: Number.isNaN(value) ? null : value,
+            current: value,
           };
           renderCalibrationTree();
           applyClassDefinitions();
@@ -507,6 +578,8 @@ function renderClasses() {
           current: Number.isNaN(value) ? null : value,
         };
         renderCalibrationTree();
+        // Auto-navigate to the matching adjacent config for this definition
+        navigateToAdjacentForDefinition(definition.key);
       });
     }
   });
@@ -742,19 +815,153 @@ function stopFfbPolling() {
   if (dot) dot.classList.remove("active");
 }
 
+async function pauseAllIframePolling() {
+  document.querySelectorAll("[id^='view-adjacent-'] iframe.adjacent-frame").forEach((iframe) => {
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage({ type: "configVisibility", visible: false }, "*");
+    }
+  });
+}
+
+function resumeActiveIframePolling() {
+  if (currentViewKey?.startsWith("adjacent:")) {
+    notifyIframeVisibility(currentViewKey);
+  }
+}
+
 async function withPollingPaused(action) {
   const hadFfb = Boolean(ffbTimer);
   const hadMonitoring = Boolean(monitoringTimer);
   stopFfbPolling();
   stopMonitoringPolling();
+  pauseAllIframePolling();
   try {
-    await action();
+    const result = await action();
+    return result;
   } finally {
     if (lastStatus?.connected) {
       if (hadFfb) startFfbPolling();
       if (hadMonitoring && isMonitoringView(currentViewKey)) startMonitoringPolling();
+      resumeActiveIframePolling();
     }
   }
+}
+
+// ── Connection Health Check ──────────────────────────────
+
+function startConnectionCheck() {
+  if (connectionCheckTimer) return;
+  reconnectAttempts = 0;
+  healthFailCount = 0;
+  connectionCheckTimer = setInterval(async () => {
+    if (!window.pywebview?.api) return;
+    // Skip health check when an adjacent config iframe is active
+    // (its polling proves the serial link is alive)
+    if (currentViewKey && currentViewKey.startsWith("adjacent-")) {
+      healthFailCount = 0;
+      return;
+    }
+    try {
+      const result = await window.pywebview.api.check_connection();
+      if (!result?.connected) {
+        handleConnectionDrop();
+      } else if (!result?.alive) {
+        healthFailCount++;
+        if (healthFailCount >= MAX_HEALTH_FAIL) {
+          handleConnectionDrop();
+        }
+      } else {
+        healthFailCount = 0;
+      }
+    } catch (err) {
+      healthFailCount++;
+      if (healthFailCount >= MAX_HEALTH_FAIL) {
+        handleConnectionDrop();
+      }
+    }
+  }, CONNECTION_CHECK_INTERVAL);
+}
+
+function stopConnectionCheck() {
+  if (!connectionCheckTimer) return;
+  clearInterval(connectionCheckTimer);
+  connectionCheckTimer = null;
+  healthFailCount = 0;
+}
+
+async function handleConnectionDrop() {
+  stopConnectionCheck();
+  stopFfbPolling();
+  stopMonitoringPolling();
+
+  const wasConnected = lastStatus?.connected;
+  const lastPort = lastStatus?.port || selectedPort;
+
+  // Update UI immediately
+  updateStatus({ connected: false, port: null, supported: false, fw: null, hw: null, heapfree: null, temp: null });
+  activeClassIds = new Set();
+  activeClasses = [];
+  classDefinitions = {
+    driver: { current: null, classes: [] },
+    encoder: { current: null, classes: [] },
+    shifter: { current: null, modes: [] },
+  };
+  renderClasses();
+  renderCalibrationTree();
+  renderMainClasses({ current: null, classes: [] });
+  renderJoystickRates({ current: null, modes: [] });
+
+  if (wasConnected) {
+    setSaveStatus("Conexao perdida. Tentando reconectar...");
+    addSystemLog("Conexao com o dispositivo perdida.", "error");
+
+    // Ensure serial session is closed on backend
+    try { await window.pywebview?.api?.disconnect(); } catch (e) { /* ignore */ }
+
+    // Try to reconnect
+    await attemptAutoReconnect(lastPort);
+  }
+}
+
+async function attemptAutoReconnect(port) {
+  if (!port || !window.pywebview?.api) return;
+  reconnectAttempts = 0;
+
+  const tryReconnect = async () => {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      setSaveStatus("Falha ao reconectar. Conecte manualmente.");
+      addSystemLog(`Reconexao falhou apos ${MAX_RECONNECT_ATTEMPTS} tentativas.`, "error");
+      return;
+    }
+    reconnectAttempts++;
+    setSaveStatus(`Reconectando... tentativa ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+
+    // Refresh ports to see if device is back
+    const ports = await window.pywebview.api.list_ports();
+    const target = ports.find((p) => p.device === port) || ports.find((p) => p.supported);
+    if (target) {
+      selectedPort = target.device;
+      const result = await window.pywebview.api.connect(selectedPort);
+      if (result?.ok) {
+        setSaveStatus("Reconectado com sucesso!");
+        addSystemLog("Reconectado com sucesso.");
+        updateStatus(result.status);
+        await loadCatalog();
+        await loadAdjacentConfigs();
+        await loadProfiles();
+        await loadClassDefinitions();
+        await loadActiveClasses();
+        await loadMainClasses();
+        await loadJoystickRates();
+        startConnectionCheck();
+        return;
+      }
+    }
+    // Wait and retry
+    setTimeout(tryReconnect, 2000);
+  };
+
+  setTimeout(tryReconnect, 1500);
 }
 
 function renderMainClasses(data) {
@@ -1232,8 +1439,8 @@ function showFirmwareModal() {
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">
-            <i class="bi bi-usb-plug"></i>
-            Firmware Update
+            <i class="bi bi-cpu"></i>
+            Firmware Update (DFU)
           </h5>
           <button type="button" class="btn-close modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -1241,26 +1448,26 @@ function showFirmwareModal() {
           <div class="firmware-layout">
             <div class="firmware-panel">
               <div class="section-label">Controle</div>
-              <div class="firmware-status">DFU: <span class="firmware-dfu-state">Procurando...</span></div>
-              <div class="firmware-file">Arquivo: <span class="firmware-file-name">--</span></div>
+              <div class="firmware-status">DFU: <span class="firmware-dfu-state">Procurando dispositivo...</span></div>
+              <div class="firmware-file">Arquivo: <span class="firmware-file-name">Nenhum selecionado</span></div>
               <label class="firmware-option">
                 <input type="checkbox" class="firmware-mass-erase" />
-                Full erase (apaga tudo)
+                Full erase (apaga firmware e configurações)
               </label>
               <div class="btn-grid-1">
-                <button class="btn-outline firmware-enter">
+                <button class="btn-outline firmware-enter" title="Envia comando DFU ao hardware e desconecta a serial">
                   <i class="bi bi-arrow-repeat"></i>
-                  Entrar em DFU
+                  Entrar em modo DFU
                 </button>
-                <button class="btn-outline firmware-select">
+                <button class="btn-outline firmware-select" disabled title="Selecionar arquivo .dfu ou .hex">
                   <i class="bi bi-folder2-open"></i>
                   Selecionar arquivo
                 </button>
-                <button class="btn-primary firmware-upload">
+                <button class="btn-primary firmware-upload" disabled title="Enviar firmware para o dispositivo">
                   <i class="bi bi-upload"></i>
                   Enviar firmware
                 </button>
-                <button class="btn-danger firmware-erase">
+                <button class="btn-danger firmware-erase" disabled title="Apaga TUDO: firmware e configurações">
                   <i class="bi bi-exclamation-triangle"></i>
                   Full erase
                 </button>
@@ -1272,7 +1479,7 @@ function showFirmwareModal() {
                 <div class="firmware-progress-bar"></div>
               </div>
               <div class="firmware-progress-text">0%</div>
-              <div class="section-label" style="margin-top: 10px;">Logs</div>
+              <div class="section-label" style="margin-top: 10px;">Log</div>
               <div class="firmware-log"></div>
             </div>
           </div>
@@ -1298,33 +1505,77 @@ function showFirmwareModal() {
   if (uploadBtn) uploadBtn.disabled = true;
   if (eraseBtn) eraseBtn.disabled = true;
 
+  let firstFail = true;
+  let dfuDeviceFound = false;
+
   const renderStatus = (data) => {
     if (!data) return;
     const dfuCount = Number(data.dfu_count || 0);
     const dfuOk = data.dfu_ok !== false;
+
     if (dfuStateEl) {
       if (!dfuOk && data.dfu_error) {
-        dfuStateEl.textContent = "Erro DFU";
+        dfuStateEl.textContent = "Erro ao acessar USB";
+        dfuStateEl.style.color = "var(--danger)";
       } else if (dfuCount === 0) {
-        dfuStateEl.textContent = "Nenhum dispositivo";
+        if (firstFail) {
+          dfuStateEl.textContent = "Procurando dispositivo DFU...";
+          dfuStateEl.style.color = "var(--text-muted)";
+          appendLog("Procurando dispositivo DFU...");
+          appendLog("Certifique-se de que o bootloader foi detectado e os drivers estao instalados.");
+          appendLog("Conecte o boot0 para forcar o bootloader se necessario.");
+          firstFail = false;
+        } else {
+          dfuStateEl.textContent = "Nenhum dispositivo DFU";
+          dfuStateEl.style.color = "var(--warning, #ffc107)";
+        }
+        dfuDeviceFound = false;
       } else if (dfuCount === 1) {
-        dfuStateEl.textContent = "Dispositivo OK";
+        dfuStateEl.textContent = "Dispositivo DFU encontrado";
+        dfuStateEl.style.color = "var(--success, #53ffba)";
+        if (!dfuDeviceFound) {
+          appendLog("Dispositivo DFU encontrado. Selecione uma opcao.");
+          dfuDeviceFound = true;
+        }
       } else {
-        dfuStateEl.textContent = `Multiplos (${dfuCount})`;
+        dfuStateEl.textContent = `Multiplos dispositivos (${dfuCount})`;
+        dfuStateEl.style.color = "var(--warning, #ffc107)";
+        appendLog("Multiplos dispositivos DFU detectados. Desconecte outros para evitar erros.");
       }
     }
-    fileNameEl.textContent = data.selected || "--";
+
+    if (data.selected) {
+      const fname = data.selected.split(/[\\/]/).pop();
+      fileNameEl.textContent = fname;
+    } else {
+      fileNameEl.textContent = "Nenhum selecionado";
+    }
+
     const progress = Math.max(0, Math.min(100, data.progress || 0));
     progressBar.style.width = `${progress}%`;
     progressText.textContent = `${progress}%`;
+
+    // Render logs from backend
     const logs = data.log || [];
-    logEl.innerHTML = logs.map((line) => `<div class="log-line log-info">${line}</div>`).join("");
+    if (logs.length > 0) {
+      logEl.innerHTML = logs.map((line) => `<div class="log-line log-info">${line}</div>`).join("");
+      logEl.scrollTop = logEl.scrollHeight;
+    }
 
     const hasDevice = dfuCount >= 1 && dfuOk;
+    if (enterBtn) enterBtn.disabled = !lastStatus?.connected || data.busy;
     if (selectBtn) selectBtn.disabled = !hasDevice;
     if (uploadBtn) uploadBtn.disabled = !hasDevice || !data.selected || data.busy;
     if (eraseBtn) eraseBtn.disabled = !hasDevice || data.busy;
-    if (enterBtn) enterBtn.disabled = !lastStatus?.connected || data.busy;
+  };
+
+  const appendLog = (msg) => {
+    if (!logEl) return;
+    const div = document.createElement("div");
+    div.className = "log-line log-info";
+    div.textContent = msg;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
   };
 
   const refreshStatus = async () => {
@@ -1334,27 +1585,51 @@ function showFirmwareModal() {
   };
 
   modalEl.querySelector(".firmware-enter").addEventListener("click", async () => {
+    appendLog("Enviando comando DFU ao hardware...");
+    stopConnectionCheck();
     await window.pywebview?.api?.dfu_enter();
+    // Connection was closed, update status
+    updateStatus({ connected: false, port: null, supported: false, fw: null, hw: null, heapfree: null, temp: null });
+    appendLog("Serial desconectada. Aguardando dispositivo DFU...");
+    firstFail = true;
+    dfuDeviceFound = false;
     await refreshStatus();
   });
 
   modalEl.querySelector(".firmware-select").addEventListener("click", async () => {
-    await window.pywebview?.api?.dfu_select_file();
+    const result = await window.pywebview?.api?.dfu_select_file();
+    if (result?.ok) {
+      appendLog(`Arquivo selecionado: ${result.path}`);
+    }
     await refreshStatus();
   });
 
   modalEl.querySelector(".firmware-upload").addEventListener("click", async () => {
     const useErase = Boolean(massErase?.checked);
+    if (uploadBtn) uploadBtn.disabled = true;
+    if (eraseBtn) eraseBtn.disabled = true;
+    if (selectBtn) selectBtn.disabled = true;
+    appendLog("Iniciando upload... NAO feche esta janela ou desconecte!");
     await window.pywebview?.api?.dfu_upload(useErase);
     await refreshStatus();
   });
 
   modalEl.querySelector(".firmware-erase").addEventListener("click", async () => {
-    await window.pywebview?.api?.dfu_mass_erase();
-    await refreshStatus();
+    showConfirmModal({
+      title: "Full chip erase",
+      body: "<p>Apagar completamente o chip?</p><p><strong>Isto apaga TUDO: firmware e configuracoes.</strong></p><p>Voce pode precisar de um programador ou conectar boot0 para reflashar!</p>",
+      confirmText: "Apagar tudo",
+      confirmIcon: "bi-exclamation-triangle",
+      onConfirm: async () => {
+        if (eraseBtn) eraseBtn.disabled = true;
+        appendLog("Apagando chip completo...");
+        await window.pywebview?.api?.dfu_mass_erase();
+        await refreshStatus();
+      },
+    });
   });
 
-  let statusTimer = setInterval(refreshStatus, 1200);
+  let statusTimer = setInterval(refreshStatus, 1000);
 
   modalEl.querySelectorAll("[data-bs-dismiss='modal']").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1669,7 +1944,13 @@ async function loadAdjacentConfigs() {
     renderCalibrationTree();
     return;
   }
-  adjacentConfigs = await window.pywebview.api.get_adjacent_configs();
+  try {
+    adjacentConfigs = await window.pywebview.api.get_adjacent_configs();
+    console.log("[DSW] loadAdjacentConfigs: received", adjacentConfigs?.length, "configs:", JSON.stringify(adjacentConfigs?.map(c => c.id)));
+  } catch (err) {
+    console.error("[DSW] loadAdjacentConfigs ERROR:", err);
+    adjacentConfigs = [];
+  }
   ensureAdjacentViews();
   renderCalibrationTree();
 }
@@ -1685,6 +1966,7 @@ async function loadClassDefinitions() {
     return;
   }
   const data = await window.pywebview.api.get_class_definitions();
+  console.log("[DSW] classDefinitions raw:", JSON.stringify(data));
   classDefinitions = {
     driver: data?.driver || { current: null, classes: [] },
     encoder: data?.encoder || { current: null, classes: [] },
@@ -1703,6 +1985,7 @@ async function loadActiveClasses() {
     return;
   }
   const active = await window.pywebview.api.get_active_classes();
+  console.log("[DSW] activeClasses raw:", JSON.stringify(active));
   if (active && active.length) {
     activeClasses = active;
     active.forEach((entry) => activeClassIds.add(entry.id));
@@ -1735,17 +2018,21 @@ async function connectSelected() {
     setSaveStatus("Falha ao conectar.");
     return;
   }
+  reconnectAttempts = 0;
   await loadCatalog();
   await loadAdjacentConfigs();
+  addSystemLog(`Adjacent configs carregados: ${adjacentConfigs.length} configs`);
   await loadProfiles();
   await loadClassDefinitions();
   await loadActiveClasses();
   await loadMainClasses();
   await loadJoystickRates();
+  startConnectionCheck();
 }
 
 async function disconnectCurrent() {
   if (!window.pywebview?.api) return;
+  stopConnectionCheck();
   const result = await window.pywebview.api.disconnect();
   updateStatus(result.status);
   activeClassIds = new Set();

@@ -955,7 +955,7 @@ body.theme-blue {
 
 .adjacent-frame {
   width: 100%;
-  min-height: 520px;
+  height: calc(100vh - 120px);
   border: none;
   border-radius: 12px;
   background: rgba(12, 18, 34, 0.6);

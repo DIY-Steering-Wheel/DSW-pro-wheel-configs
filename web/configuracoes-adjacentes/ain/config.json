@@ -2,6 +2,7 @@
   "id": "ain",
   "title": "AIN (Analógico)",
   "icon": "bi-filter-circle",
-  "clsname_match": ["analog", "ain", "apin"],
+  "clsname_match": ["analog", "ain", "apin", "analogsource", "analogin"],
+  "show_when_connected": true,
   "requires_active": true
 }

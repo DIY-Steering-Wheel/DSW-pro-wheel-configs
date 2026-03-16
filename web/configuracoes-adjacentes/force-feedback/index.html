@@ -13,21 +13,84 @@
         <h2>Force Feedback</h2>
         <button id="refreshFfb" class="btn-outline" type="button">Atualizar</button>
       </div>
+
+      <!-- Status -->
       <div class="adjacent-card">
         <div class="adjacent-row">
           <div class="adjacent-label">Status</div>
           <div class="status-pill">
-            <span class="status-dot" id="ffbDotLocal"></span>
-            <span id="ffbStatusLocal">0 Hz</span>
+            <span class="status-dot" id="ffbDot"></span>
+            <span id="ffbStatus">0 Hz</span>
           </div>
         </div>
         <div class="adjacent-row">
           <div class="adjacent-label">CF Rate</div>
-          <div id="ffbCfRate">--</div>
+          <span id="ffbCfRate">--</span>
         </div>
         <div class="adjacent-row">
+          <div class="adjacent-label">HID Report Rate</div>
+          <select id="ffbReportRate" class="form-select-custom"></select>
+        </div>
+      </div>
+
+      <!-- Effects Gain -->
+      <div class="adjacent-card">
+        <div class="adjacent-label">Ganhos de efeitos</div>
+
+        <div class="gain-group">
+          <div class="gain-label">CF Filter Freq</div>
+          <div class="gain-control">
+            <input id="cfFreqSlider" type="range" min="0" max="500" value="500" class="gain-slider" />
+            <span id="cfFreqVal" class="gain-value">Off</span>
+          </div>
+        </div>
+
+        <div class="gain-group" id="cfQGroup">
+          <div class="gain-label">CF Filter Q</div>
+          <div class="gain-control">
+            <input id="cfQSlider" type="range" min="0" max="300" value="50" class="gain-slider" />
+            <span id="cfQVal" class="gain-value">0.50</span>
+          </div>
+        </div>
+
+        <div class="gain-group">
+          <div class="gain-label">Spring</div>
+          <div class="gain-control">
+            <input id="springSlider" type="range" min="0" max="256" value="128" class="gain-slider" />
+            <span id="springVal" class="gain-value">0.00</span>
+          </div>
+        </div>
+
+        <div class="gain-group">
+          <div class="gain-label">Damper</div>
+          <div class="gain-control">
+            <input id="damperSlider" type="range" min="0" max="256" value="128" class="gain-slider" />
+            <span id="damperVal" class="gain-value">0.00</span>
+          </div>
+        </div>
+
+        <div class="gain-group">
+          <div class="gain-label">Friction</div>
+          <div class="gain-control">
+            <input id="frictionSlider" type="range" min="0" max="256" value="128" class="gain-slider" />
+            <span id="frictionVal" class="gain-value">0.00</span>
+          </div>
+        </div>
+
+        <div class="gain-group">
+          <div class="gain-label">Inertia</div>
+          <div class="gain-control">
+            <input id="inertiaSlider" type="range" min="0" max="256" value="128" class="gain-slider" />
+            <span id="inertiaVal" class="gain-value">0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Apply -->
+      <div class="adjacent-card">
+        <div class="adjacent-row">
           <button id="applyFfb" class="btn-primary-sm" type="button">Aplicar</button>
-          <span class="adjacent-hint">Aplicar atualiza o status.</span>
+          <span class="adjacent-hint" id="ffbHint">--</span>
         </div>
       </div>
     </div>

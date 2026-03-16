@@ -2,8 +2,8 @@
   "id": "force-feedback",
   "title": "Force Feedback",
   "icon": "bi-speedometer2",
-  "definition_key": "driver",
-  "definition_match": ["ffb", "force"],
-  "clsname_match": ["ffb", "force"],
+  "class_id": 1,
+  "clsname_match": ["ffb", "force", "ffbwheel"],
+  "show_when_connected": true,
   "requires_active": true
 }

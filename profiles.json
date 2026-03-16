@@ -129,77 +129,77 @@
           "cls": "fx",
           "instance": 0,
           "cmd": "filterCfQ",
-          "value": "80"
+          "value": "70"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "spring",
-          "value": "255"
+          "value": "64"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "friction",
-          "value": "227"
+          "value": "254"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "damper",
-          "value": "180"
+          "value": "64"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "inertia",
-          "value": "228"
+          "value": "127"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "power",
-          "value": "23192"
+          "value": "5000"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "degrees",
-          "value": "880"
+          "value": "900"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "fxratio",
-          "value": "255"
+          "value": "204"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "esgain",
-          "value": "255"
+          "value": "127"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "idlespring",
-          "value": "0"
+          "value": "127"
         },
         {
           "fullname": "Axis",
           "cls": "axis",
           "instance": 0,
           "cmd": "axisdamper",
-          "value": "0"
+          "value": "30"
         },
         {
           "fullname": "Axis",

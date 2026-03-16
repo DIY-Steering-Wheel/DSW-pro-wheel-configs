@@ -4,45 +4,115 @@
   gap: 16px;
   padding: 16px;
   color: var(--text-primary);
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
-.adjacent-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.adjacent-header h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.adjacent-card {
-  background: rgba(12, 18, 34, 0.6);
+/* ── Group boxes (fieldset) ── */
+.pwm-group {
   border: 1px solid rgba(90, 126, 190, 0.35);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  margin: 0;
 }
 
-.adjacent-row {
+.pwm-group legend {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent, #5dade2);
+  padding: 0 8px;
+  letter-spacing: 0.4px;
+}
+
+/* ── Form grid (label + control) ── */
+.pwm-form {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px 16px;
+  align-items: center;
+}
+
+.pwm-label {
+  font-size: 13px;
+  color: var(--text-secondary, #b0bec5);
+  white-space: nowrap;
+}
+
+.pwm-checkbox {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
 }
 
-.adjacent-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+.pwm-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent, #5dade2);
+  cursor: pointer;
 }
 
-.adjacent-hint {
+.pwm-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.pwm-hint {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-muted, #607d8b);
+  margin-left: 8px;
+}
+
+.btn-outline-sm {
+  background: transparent;
+  border: 1px solid rgba(90, 126, 190, 0.45);
+  color: var(--text-secondary, #b0bec5);
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.btn-outline-sm:hover {
+  border-color: var(--accent, #5dade2);
+  color: var(--accent, #5dade2);
+}
+
+/* ── Usage section ── */
+.pwm-usage {
+  flex: 1;
+}
+
+.pwm-usage-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.pwm-usage-content p {
+  margin: 0 0 6px;
+}
+
+.pwm-bold {
+  font-weight: 600;
+  margin-top: 8px !important;
+}
+
+.pwm-mode-title {
+  text-decoration: underline;
+  margin-top: 10px !important;
+  margin-bottom: 2px !important;
+}
+
+.pwm-mode-desc {
+  margin-left: 0;
+  color: var(--text-secondary, #b0bec5);
+  font-size: 12.5px;
 }

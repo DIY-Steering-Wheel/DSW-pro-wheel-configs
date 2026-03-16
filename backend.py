@@ -33,6 +33,7 @@ class SerialBackend:
         self._serial: Optional[serial.Serial] = None
         self._lock = threading.Lock()
         self._request_lock = threading.Lock()
+        self._disconnect_event = threading.Event()
         self._reader: Optional[threading.Thread] = None
         self._running = False
         self._buffer = ""
@@ -62,6 +63,18 @@ class SerialBackend:
         with self._lock:
             if self._serial and self._serial.is_open:
                 return True
+            # Ensure _request_lock is free before opening a new session.
+            # A stale lock from a timed-out previous request can block all
+            # new requests after reconnection.
+            acquired = self._request_lock.acquire(timeout=6.0)
+            if acquired:
+                self._request_lock.release()
+            else:
+                SERIAL_LOG.warning("CONNECT: _request_lock was stuck, resetting")
+                self._request_lock = threading.Lock()
+            self._disconnect_event.clear()
+            self._callbacks.clear()
+            self._buffer = ""
             try:
                 self._serial = serial.Serial(port=port_name, baudrate=115200, timeout=0.1)
                 self._serial.dtr = True
@@ -80,16 +93,38 @@ class SerialBackend:
     def disconnect(self) -> None:
         with self._lock:
             self._running = False
+            # Signal any waiting requests to unblock immediately
+            self._disconnect_event.set()
             if self._serial:
                 port = self._serial.port
                 try:
                     self._serial.close()
                 finally:
                     self._serial = None
+                    self._callbacks.clear()
+                    self._buffer = ""
                     SERIAL_LOG.info("DISCONNECT %s", port)
 
     def is_connected(self) -> bool:
         return self._serial is not None and self._serial.is_open
+
+    def check_alive(self) -> bool:
+        """Quick health check - returns True if board appears connected.
+
+        If the request lock is held by another operation we treat that as
+        proof that the board is still communicating and return True.
+        """
+        if not self.is_connected():
+            return False
+        # Fast path: if another request is in progress, serial is active.
+        # Wait briefly in case a request is just finishing.
+        if not self._request_lock.acquire(timeout=2.0):
+            # Lock held for 2s+ means something is actively using serial
+            return True
+        self._request_lock.release()
+        # Actually ping the board with a short timeout
+        reply = self.request("main", "id", timeout=2.0)
+        return reply is not None
 
     def send_raw(self, payload: str) -> None:
         if not self.is_connected():
@@ -114,6 +149,11 @@ class SerialBackend:
             SERIAL_LOG.error("REQ_LOCK_TIMEOUT %s.%s", cls, cmd)
             return None
 
+        # Abort early if we disconnected while waiting for the lock
+        if self._disconnect_event.is_set() or not self.is_connected():
+            self._request_lock.release()
+            return None
+
         result = {"value": None}
         evt = threading.Event()
 
@@ -131,10 +171,17 @@ class SerialBackend:
         self.send_raw(payload)
 
         try:
-            evt.wait(timeout)
+            # Wait for reply, but also unblock on disconnect
+            deadline = time.monotonic() + timeout
+            while not evt.is_set() and not self._disconnect_event.is_set():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                evt.wait(min(remaining, 0.5))
             if not evt.is_set() and cb in self._callbacks:
                 self._callbacks.remove(cb)
-                SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
+                if not self._disconnect_event.is_set():
+                    SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
             return result["value"]
         finally:
             self._request_lock.release()
@@ -162,9 +209,12 @@ class SerialBackend:
 
     def get_active_tabs(self) -> List[Dict]:
         reply = self.request("sys", "lsactive")
+        SERIAL_LOG.info("lsactive raw: %r", reply)
         if not reply:
             return []
-        return build_tabs_from_lsactive(reply)
+        tabs = build_tabs_from_lsactive(reply)
+        SERIAL_LOG.info("lsactive parsed %d tabs: %s", len(tabs), [(t.get("clsname"), t.get("id")) for t in tabs])
+        return tabs
 
     def get_main_classes(self) -> Dict:
         if not self.is_connected():
@@ -438,9 +488,14 @@ class SerialBackend:
     def save_to_flash(self) -> bool:
         if not self.is_connected():
             return False
-        reply = self.request("sys", "save", timeout=3.0)
+        # Wait briefly for any in-flight requests to finish
+        time.sleep(0.15)
+        reply = self.request("sys", "save", timeout=5.0)
         if reply is None:
-            reply = self.request("sys", "save", timeout=3.0)
+            SERIAL_LOG.warning("SAVE_TO_FLASH first attempt failed, retrying...")
+            time.sleep(0.3)
+            reply = self.request("sys", "save", timeout=5.0)
+        SERIAL_LOG.info("SAVE_TO_FLASH result: %s", reply)
         return reply is not None
 
     def set_class_active(self, class_id: int, enabled: bool) -> bool:

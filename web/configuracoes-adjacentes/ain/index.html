@@ -13,29 +13,60 @@
         <h2>AIN (Analógico)</h2>
         <button id="refreshAin" class="btn-outline" type="button">Atualizar</button>
       </div>
-      <div class="adjacent-card">
-        <div class="adjacent-row">
-          <div class="adjacent-label">Entradas ativas</div>
-          <div id="ainCount">--</div>
+
+      <!-- Activation overlay (shown when AIN-Pins is not active) -->
+      <div id="ainActivationOverlay" class="activation-overlay" style="display:none;">
+        <div class="activation-card">
+          <i class="activation-icon">&#9888;</i>
+          <h3>AIN-Pins não está ativo</h3>
+          <p>O tipo AIN-Pins precisa ser ativado para configurar os canais analógicos.</p>
+          <button id="btnActivateAin" class="btn-primary-sm activation-btn" type="button">Ativar AIN-Pins</button>
+          <span id="activationHint" class="adjacent-hint"></span>
         </div>
-        <div id="ainPins" class="pin-grid"></div>
-        <div class="adjacent-row">
-          <label class="toggle-switch">
-            <input id="ainFilter" type="checkbox" />
-            <span class="toggle-slider"></span>
-            <span>Filtro</span>
-          </label>
-          <label class="toggle-switch">
-            <input id="ainAutorange" type="checkbox" />
-            <span class="toggle-slider"></span>
-            <span>Autorange</span>
-          </label>
+      </div>
+
+      <!-- Main content (hidden when not active) -->
+      <div id="ainMainContent">
+      <!-- Output channels -->
+      <div class="adjacent-card">
+        <div class="adjacent-section">
+          <div class="adjacent-label">Canais de saída</div>
+          <div id="ainChannels" class="channel-grid"></div>
+          <div class="channel-count" id="ainChannelCount">0 canais</div>
+        </div>
+      </div>
+
+      <!-- Manual limits -->
+      <div class="adjacent-card" id="manualLimitsCard">
+        <div class="adjacent-section">
+          <div class="adjacent-label">Limites manuais (Min / Max)</div>
+          <div id="ainLimits" class="limits-grid"></div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="adjacent-card">
+        <div class="adjacent-section">
+          <div class="adjacent-label">Opções</div>
+          <div class="options-row">
+            <label class="toggle-switch">
+              <input id="ainFilter" type="checkbox" />
+              <span class="toggle-slider"></span>
+              <span>Lowpass filter</span>
+            </label>
+            <label class="toggle-switch">
+              <input id="ainAutorange" type="checkbox" />
+              <span class="toggle-slider"></span>
+              <span>Autorange</span>
+            </label>
+          </div>
         </div>
         <div class="adjacent-row">
           <button id="applyAin" class="btn-primary-sm" type="button">Aplicar</button>
           <span class="adjacent-hint" id="ainHint">--</span>
         </div>
       </div>
+      </div> <!-- /ainMainContent -->
     </div>
     <script src="index.js"></script>
   </body>

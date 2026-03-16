@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 from dataclasses import dataclass, asdict
 from typing import Dict, List
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -186,23 +189,40 @@ def build_tabs_from_lsactive(reply: str) -> List[Dict]:
 
 def load_adjacent_configs(web_dir: str) -> List[Dict]:
     root = os.path.join(web_dir, "configuracoes-adjacentes")
+    _log.info("load_adjacent_configs: root=%s exists=%s", root, os.path.isdir(root))
     if not os.path.isdir(root):
+        _log.warning("load_adjacent_configs: directory not found: %s", root)
         return []
 
     configs: List[Dict] = []
-    for entry in os.scandir(root):
+    try:
+        entries = list(os.scandir(root))
+    except OSError as e:
+        _log.error("load_adjacent_configs: scandir failed: %s", e)
+        return []
+
+    _log.info("load_adjacent_configs: scandir found %d entries: %s",
+              len(entries), [e.name for e in entries])
+
+    for entry in entries:
+        _log.info("load_adjacent_configs: entry=%s is_dir=%s", entry.name, entry.is_dir())
         if not entry.is_dir():
             continue
         cfg_path = os.path.join(entry.path, "config.json")
-        if not os.path.exists(cfg_path):
+        exists = os.path.exists(cfg_path)
+        _log.info("load_adjacent_configs: cfg_path=%s exists=%s", cfg_path, exists)
+        if not exists:
             continue
         try:
-            with open(cfg_path, "r", encoding="utf-8") as fh:
+            with open(cfg_path, "r", encoding="utf-8-sig") as fh:
                 data = json.load(fh)
-        except (OSError, json.JSONDecodeError):
+            _log.info("load_adjacent_configs: parsed %s -> keys=%s", entry.name, list(data.keys()) if isinstance(data, dict) else type(data).__name__)
+        except (OSError, json.JSONDecodeError) as e:
+            _log.error("load_adjacent_configs: failed to read/parse %s: %s", cfg_path, e)
             continue
 
         if not isinstance(data, dict):
+            _log.warning("load_adjacent_configs: %s data is not dict: %s", entry.name, type(data).__name__)
             continue
 
         slug = entry.name
@@ -222,6 +242,7 @@ def load_adjacent_configs(web_dir: str) -> List[Dict]:
                 "definition_key": data.get("definition_key"),
                 "definition_match": data.get("definition_match") or [],
                 "requires_active": data.get("requires_active", True),
+                "show_when_connected": data.get("show_when_connected", False),
                 "view": view,
                 "script": script,
                 "style": style,

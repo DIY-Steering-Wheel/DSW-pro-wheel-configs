@@ -154,7 +154,7 @@ class Api:
         self._schema = get_ui_schema()
         self._serial = SerialBackend()
         self._profiles = ProfileStore()
-        self._web_dir = os.path.join(os.path.dirname(__file__), "web")
+        self._web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
         self._dfu = DfuService(self._serial)
 
     @staticmethod
@@ -181,7 +181,9 @@ class Api:
         return self._schema
 
     def get_adjacent_configs(self) -> List[Dict]:
-        return load_adjacent_configs(self._web_dir)
+        configs = load_adjacent_configs(self._web_dir)
+        logging.info("get_adjacent_configs: web_dir=%s, found=%d configs", self._web_dir, len(configs))
+        return configs
 
     def list_ports(self) -> List[Dict]:
         return self._serial.list_ports()
@@ -207,6 +209,34 @@ class Api:
             "heapfree": status.heapfree,
             "temp": status.temp,
         }
+
+    def is_connected(self) -> bool:
+        return self._serial.is_connected()
+
+    _health_failures: int = 0
+    _MAX_HEALTH_FAILURES: int = 3
+
+    def check_connection(self) -> Dict:
+        """Lightweight connection health check for frontend polling.
+
+        Only disconnects after several consecutive failures to avoid
+        dropping the connection on transient serial lock contention.
+        """
+        connected = self._serial.is_connected()
+        if not connected:
+            self._health_failures = 0
+            return {"connected": False, "alive": False}
+        alive = self._serial.check_alive()
+        if not alive:
+            self._health_failures += 1
+            if self._health_failures >= self._MAX_HEALTH_FAILURES:
+                self._health_failures = 0
+                self._serial.disconnect()
+                return {"connected": False, "alive": False}
+            # Not yet fatal – report still connected
+            return {"connected": True, "alive": False}
+        self._health_failures = 0
+        return {"connected": True, "alive": True}
 
     def get_active_classes(self) -> List[Dict]:
         return self._serial.get_active_tabs()
@@ -457,8 +487,6 @@ class Api:
     def save_profile_from_board(self, name: str) -> Dict:
         if not self._serial.is_connected():
             return {"ok": False, "error": "not_connected"}
-        if name in (self._profiles.NONE_PROFILE, self._profiles.FLASH_PROFILE):
-            self._serial.save_to_flash()
         data = []
         call_order = self._profiles.get_call_order()
         active = self._serial.request("sys", "lsactive")

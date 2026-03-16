@@ -4,6 +4,9 @@
   gap: 16px;
   padding: 16px;
   color: var(--text-primary);
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
 .adjacent-header {
@@ -36,10 +39,11 @@
 }
 
 .adjacent-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  font-weight: 600;
 }
 
 .adjacent-hint {

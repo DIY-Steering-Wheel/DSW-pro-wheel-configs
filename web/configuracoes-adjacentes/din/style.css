@@ -4,6 +4,9 @@
   gap: 16px;
   padding: 16px;
   color: var(--text-primary);
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
 .adjacent-header {
@@ -28,6 +31,12 @@
   gap: 14px;
 }
 
+.adjacent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .adjacent-row {
   display: flex;
   align-items: center;
@@ -37,10 +46,11 @@
 }
 
 .adjacent-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  font-weight: 600;
 }
 
 .adjacent-hint {
@@ -48,31 +58,100 @@
   color: var(--text-muted);
 }
 
+/* Pin grid with columns */
+.pin-grid-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
 .pin-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .pin-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: rgba(9, 15, 28, 0.6);
   border: 1px solid rgba(90, 126, 190, 0.25);
   font-size: 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.pin-toggle {
+.pin-row.active {
+  background: rgba(255, 220, 50, 0.15);
+  border-color: rgba(255, 220, 50, 0.5);
+}
+
+.pin-check {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-.pin-toggle input {
+.pin-check input {
   accent-color: var(--accent);
+}
+
+/* ── Activation overlay ── */
+.activation-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 200px;
+}
+
+.activation-card {
+  text-align: center;
+  background: rgba(12, 18, 34, 0.7);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 14px;
+  padding: 32px 40px;
+  max-width: 380px;
+}
+
+.activation-card h3 {
+  margin: 12px 0 8px;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.activation-card p {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.activation-icon {
+  font-style: normal;
+  font-size: 32px;
+  color: var(--accent);
+}
+
+.activation-btn {
+  padding: 8px 24px !important;
+  font-size: 13px !important;
+}
+
+.activation-overlay .adjacent-hint {
+  display: block;
+  margin-top: 10px;
 }

@@ -4,6 +4,9 @@
   gap: 16px;
   padding: 16px;
   color: var(--text-primary);
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
 .adjacent-header {
@@ -28,6 +31,12 @@
   gap: 14px;
 }
 
+.adjacent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .adjacent-row {
   display: flex;
   align-items: center;
@@ -37,10 +46,11 @@
 }
 
 .adjacent-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  font-weight: 600;
 }
 
 .adjacent-hint {
@@ -48,31 +58,222 @@
   color: var(--text-muted);
 }
 
-.pin-grid {
+.options-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.pin-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
+/* Channel grid with progress bars */
+.channel-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-row {
+  display: flex;
   align-items: center;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: rgba(9, 15, 28, 0.6);
   border: 1px solid rgba(90, 126, 190, 0.25);
   font-size: 12px;
 }
 
-.pin-toggle {
+.channel-check {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
+  min-width: 36px;
+  cursor: pointer;
 }
 
-.pin-toggle input {
+.channel-check input {
   accent-color: var(--accent);
+}
+
+.channel-bar-wrap {
+  flex: 1;
+  position: relative;
+  height: 18px;
+  background: rgba(9, 15, 28, 0.8);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(90, 126, 190, 0.2);
+}
+
+.channel-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(63, 163, 255, 0.4) 100%);
+  transition: width 0.15s ease;
+  border-radius: 3px;
+}
+
+.channel-val {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+/* ── Manual limits grid ── */
+.limits-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.limit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(9, 15, 28, 0.6);
+  border: 1px solid rgba(90, 126, 190, 0.25);
+  font-size: 12px;
+}
+
+.limit-label {
+  min-width: 40px;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.limit-slider-wrap {
+  flex: 1;
+  position: relative;
+  height: 26px;
+  display: flex;
+  align-items: center;
+}
+
+.limit-raw-bar {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 6px;
+  transform: translateY(-50%);
+  background: rgba(63, 163, 255, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+  transition: width 0.15s ease;
+  z-index: 0;
+}
+
+.limit-slider {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  height: 26px;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.limit-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: rgba(90, 126, 190, 0.2);
+  border-radius: 2px;
+}
+
+.limit-min::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.limit-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent, #3fa3ff);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  pointer-events: auto;
+  margin-top: -5px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.limit-min::-webkit-slider-thumb {
+  background: #ff9800;
+}
+
+.limit-vals {
+  min-width: 80px;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.channel-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Activation overlay ── */
+.activation-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 200px;
+}
+
+.activation-card {
+  text-align: center;
+  background: rgba(12, 18, 34, 0.7);
+  border: 1px solid rgba(90, 126, 190, 0.35);
+  border-radius: 14px;
+  padding: 32px 40px;
+  max-width: 380px;
+}
+
+.activation-card h3 {
+  margin: 12px 0 8px;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.activation-card p {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.activation-icon {
+  font-style: normal;
+  font-size: 32px;
+  color: var(--accent);
+}
+
+.activation-btn {
+  padding: 8px 24px !important;
+  font-size: 13px !important;
+}
+
+.activation-overlay .adjacent-hint {
+  display: block;
+  margin-top: 10px;
 }

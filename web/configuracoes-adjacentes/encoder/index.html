@@ -15,9 +15,86 @@
       </div>
       <div class="adjacent-card">
         <div class="adjacent-row">
-          <div class="adjacent-label">Classe</div>
+          <div class="adjacent-label">Tipo de encoder</div>
           <select id="encoderSelect" class="form-select-custom"></select>
         </div>
+      </div>
+
+      <!-- Encoder-specific settings -->
+      <div id="encoderSettings" class="adjacent-card" style="display:none">
+        <div class="adjacent-label" id="encoderSettingsTitle">Configurações do encoder</div>
+
+        <!-- Local Encoder (id=2) -->
+        <div id="encLocal" class="enc-panel" style="display:none">
+          <div class="adjacent-row">
+            <div class="adjacent-label">CPR (= 4x PPR)</div>
+            <input id="localCpr" type="number" class="form-input-sm" min="0" max="65535" value="0" />
+          </div>
+          <div class="adjacent-row">
+            <label class="toggle-switch">
+              <input id="localIndex" type="checkbox" />
+              <span class="toggle-slider"></span>
+              <span>Use index homing</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- MT SPI Encoder (id=4) -->
+        <div id="encMt" class="enc-panel" style="display:none">
+          <div class="adjacent-row">
+            <div class="adjacent-label">CS pin (SPI3)</div>
+            <input id="mtCs" type="number" class="form-input-sm" min="1" max="3" value="1" />
+          </div>
+          <div class="adjacent-row">
+            <div class="adjacent-label">Tipo</div>
+            <select id="mtMode" class="form-select-custom"></select>
+          </div>
+          <div class="adjacent-row">
+            <div class="adjacent-label">SPI speed</div>
+            <select id="mtSpeed" class="form-select-custom"></select>
+          </div>
+        </div>
+
+        <!-- BISS-C Encoder (id=5) -->
+        <div id="encBiss" class="enc-panel" style="display:none">
+          <div class="adjacent-row">
+            <div class="adjacent-label">Bits</div>
+            <input id="bissBits" type="number" class="form-input-sm" min="1" max="32" value="1" />
+          </div>
+          <div class="adjacent-row">
+            <label class="toggle-switch">
+              <input id="bissDir" type="checkbox" />
+              <span class="toggle-slider"></span>
+              <span>Reverse direction (default)</span>
+            </label>
+          </div>
+          <div class="enc-note">SPI3 extension port — Port is used exclusively!</div>
+        </div>
+
+        <!-- SSI Encoder (id=6) -->
+        <div id="encSsi" class="enc-panel" style="display:none">
+          <div class="adjacent-row">
+            <div class="adjacent-label">Bits</div>
+            <input id="ssiBits" type="number" class="form-input-sm" min="1" max="32" value="1" />
+          </div>
+          <div class="adjacent-row">
+            <div class="adjacent-label">Mode</div>
+            <select id="ssiMode" class="form-select-custom"></select>
+          </div>
+          <div class="adjacent-row">
+            <div class="adjacent-label">SPI speed</div>
+            <select id="ssiSpeed" class="form-select-custom"></select>
+          </div>
+          <div class="enc-note">SPI3 extension port — Port is used exclusively!</div>
+        </div>
+
+        <!-- No settings -->
+        <div id="encNone" class="enc-panel" style="display:none">
+          <div class="enc-note">Sem configurações adicionais</div>
+        </div>
+      </div>
+
+      <div class="adjacent-card">
         <div class="adjacent-row">
           <button id="applyEncoder" class="btn-primary-sm" type="button">Aplicar</button>
           <span class="adjacent-hint" id="encoderHint">--</span>

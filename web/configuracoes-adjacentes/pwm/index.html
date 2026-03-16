@@ -9,20 +9,59 @@
   </head>
   <body class="theme-blue">
     <div class="adjacent-page">
-      <div class="adjacent-header">
-        <h2>Driver PWM</h2>
-        <button id="refreshPwm" class="btn-outline" type="button">Atualizar</button>
-      </div>
-      <div class="adjacent-card">
-        <div class="adjacent-row">
-          <div class="adjacent-label">Driver selecionado</div>
-          <div id="pwmDriverName">--</div>
+
+      <!-- PWM Output -->
+      <fieldset class="pwm-group">
+        <legend>PWM Output</legend>
+        <div class="pwm-form">
+          <label class="pwm-label" for="pwmMode">Output mode:</label>
+          <select id="pwmMode" class="form-select-custom"></select>
+
+          <label class="pwm-label" for="pwmFreq">Frequency Preset:</label>
+          <select id="pwmFreq" class="form-select-custom"></select>
+
+          <label class="pwm-label">Other settings:</label>
+          <label class="pwm-checkbox">
+            <input id="pwmInvert" type="checkbox" />
+            <span>Invert direction</span>
+          </label>
+
+          <div class="pwm-actions">
+            <button id="applyPwm" class="btn-primary-sm" type="button">Apply</button>
+            <button id="refreshPwm" class="btn-outline-sm" type="button">Atualizar</button>
+            <span class="pwm-hint" id="pwmHint"></span>
+          </div>
         </div>
-        <div class="adjacent-row">
-          <button id="applyPwm" class="btn-primary-sm" type="button">Aplicar</button>
-          <span class="adjacent-hint" id="pwmHint">--</span>
+      </fieldset>
+
+      <!-- Usage -->
+      <fieldset class="pwm-group pwm-usage">
+        <legend>Usage</legend>
+        <div class="pwm-usage-content">
+          <p>Set FFB to max power for full range.</p>
+          <p class="pwm-bold">Connections (For F407 official board):</p>
+
+          <p class="pwm-mode-title">RC PPM:</p>
+          <p class="pwm-mode-desc">PWM1: 1000-2000&micro;s with 0 at 1500&micro;s</p>
+
+          <p class="pwm-mode-title">Centered PWM:</p>
+          <p class="pwm-mode-desc">PWM1: PWM with 0 torque at 50%, -100% at 0% and 100% at 100% pwm</p>
+
+          <p class="pwm-mode-title">Dual PWM:</p>
+          <p class="pwm-mode-desc">
+            0-100% on PWM1 if torque positive, PWM2 0%<br />
+            0-100% on PWM2 if torque negative, PWM1 0%
+          </p>
+
+          <p class="pwm-mode-title">PWM/DIR:</p>
+          <p class="pwm-mode-desc">
+            PWM1: PWM output<br />
+            PWM3 (PWM2 for disco): Direction (left, inverted to PWM4)<br />
+            PWM4: Direction (right)
+          </p>
         </div>
-      </div>
+      </fieldset>
+
     </div>
     <script src="index.js"></script>
   </body>
