@@ -70,11 +70,14 @@ async function applyAds() {
   const rate = parseInt(document.getElementById('adsRate')?.value, 10);
   const fast = document.getElementById('adsI2cFast')?.checked ? 1 : 0;
 
-  await api.serial_set_value('adsAnalog', 'diff', diff, 0, null);
-  await api.serial_set_value('adsAnalog', 'inputs', inputs, 0, null);
-  if (!Number.isNaN(gain)) await api.serial_set_value('adsAnalog', 'gain', gain, 0, null);
-  if (!Number.isNaN(rate)) await api.serial_set_value('adsAnalog', 'rate', rate, 0, null);
-  await api.serial_set_value('i2c', 'speed', fast, 0, null);
+  const sets = [
+    { cls: 'adsAnalog', cmd: 'diff', value: diff, instance: 0 },
+    { cls: 'adsAnalog', cmd: 'inputs', value: inputs, instance: 0 },
+  ];
+  if (!Number.isNaN(gain)) sets.push({ cls: 'adsAnalog', cmd: 'gain', value: gain, instance: 0 });
+  if (!Number.isNaN(rate)) sets.push({ cls: 'adsAnalog', cmd: 'rate', value: rate, instance: 0 });
+  sets.push({ cls: 'i2c', cmd: 'speed', value: fast, instance: 0 });
+  await api.serial_set_many(sets);
 
   updateStatus('Aplicado');
 }

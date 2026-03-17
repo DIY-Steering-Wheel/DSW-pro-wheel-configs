@@ -205,10 +205,14 @@ class SerialBackend:
         callbacks: List[Dict] = []
         payload_parts: List[str] = []
 
+        # Use a shared event that fires whenever any individual reply arrives
+        shared_evt = threading.Event()
+
         def _make_handler(idx: int):
             def handler(reply: str) -> None:
                 results[idx] = reply
                 events[idx].set()
+                shared_evt.set()
             return handler
 
         for idx, req in enumerate(requests):
@@ -236,9 +240,8 @@ class SerialBackend:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                for evt in events:
-                    if not evt.is_set():
-                        evt.wait(min(remaining, 0.2))
+                shared_evt.clear()
+                shared_evt.wait(min(remaining, 0.5))
         finally:
             for cb in callbacks:
                 if cb in self._callbacks:
@@ -252,13 +255,34 @@ class SerialBackend:
             return
         self.send_raw(encode_set(cls, cmd, value=value, instance=instance, address=adr))
 
+    def send_values_batch(self, items: List[Dict]) -> None:
+        """Send multiple set commands in a single serial write for efficiency."""
+        if not self.is_connected() or not items:
+            return
+        payload = "".join(
+            encode_set(
+                item["cls"],
+                item["cmd"],
+                value=int(item["value"]),
+                instance=int(item.get("instance", 0) or 0),
+                address=item.get("adr"),
+            )
+            for item in items
+            if item.get("cls") and item.get("cmd") and item.get("value") is not None
+        )
+        if payload:
+            self.send_raw(payload)
+
     def get_status(self) -> SerialStatus:
         if not self.is_connected():
             return SerialStatus(False, None, False, None, None, None, None)
-        fw = self.request("sys", "swver")
-        hw = self.request("sys", "hwtype")
-        heapfree = self.request("sys", "heapfree")
-        temp = self.request("sys", "temp")
+        replies = self.request_many([
+            {"cls": "sys", "cmd": "swver", "typechar": "?"},
+            {"cls": "sys", "cmd": "hwtype", "typechar": "?"},
+            {"cls": "sys", "cmd": "heapfree", "typechar": "?"},
+            {"cls": "sys", "cmd": "temp", "typechar": "?"},
+        ])
+        fw, hw, heapfree, temp = replies
         port = self._serial.port if self._serial else None
         supported = False
         if port:
@@ -364,12 +388,15 @@ class SerialBackend:
                 "shifter": {"current": None, "modes": []},
             }
 
-        driver_list = self.request("axis", "drvtype", instance=axis, typechar="!")
-        driver_current = self.request("axis", "drvtype", instance=axis, typechar="?")
-        encoder_list = self.request("axis", "enctype", instance=axis, typechar="!")
-        encoder_current = self.request("axis", "enctype", instance=axis, typechar="?")
-        shifter_list = self.request("shifter", "mode", instance=0, typechar="!")
-        shifter_current = self.request("shifter", "mode", instance=0, typechar="?")
+        replies = self.request_many([
+            {"cls": "axis", "cmd": "drvtype", "instance": axis, "typechar": "!"},
+            {"cls": "axis", "cmd": "drvtype", "instance": axis, "typechar": "?"},
+            {"cls": "axis", "cmd": "enctype", "instance": axis, "typechar": "!"},
+            {"cls": "axis", "cmd": "enctype", "instance": axis, "typechar": "?"},
+            {"cls": "shifter", "cmd": "mode", "instance": 0, "typechar": "!"},
+            {"cls": "shifter", "cmd": "mode", "instance": 0, "typechar": "?"},
+        ])
+        driver_list, driver_current, encoder_list, encoder_current, shifter_list, shifter_current = replies
 
         def _to_int(value: Optional[str]) -> Optional[int]:
             if value is None:
@@ -421,8 +448,11 @@ class SerialBackend:
     def get_effects_status(self, axis: int = 0) -> Dict:
         if not self.is_connected():
             return {"ok": False, "effects": [], "active_mask": 0}
-        details = self.request("fx", "effectsDetails", adr=axis, typechar="?", timeout=2.5)
-        active = self.request("fx", "effects", typechar="?", timeout=2.5)
+        replies = self.request_many([
+            {"cls": "fx", "cmd": "effectsDetails", "adr": axis, "typechar": "?"},
+            {"cls": "fx", "cmd": "effects", "typechar": "?"},
+        ], timeout=2.5)
+        details, active = replies
         effects: List[Dict] = []
         if details:
             try:
@@ -458,9 +488,12 @@ class SerialBackend:
     def get_ffb_status(self) -> Dict:
         if not self.is_connected():
             return {"ok": False, "active": False, "rate": 0, "cfrate": 0}
-        rate = self.request("main", "hidrate", typechar="?", timeout=2.0)
-        cfrate = self.request("main", "cfrate", typechar="?", timeout=2.0)
-        active = self.request("main", "ffbactive", typechar="?", timeout=2.0)
+        replies = self.request_many([
+            {"cls": "main", "cmd": "hidrate", "typechar": "?"},
+            {"cls": "main", "cmd": "cfrate", "typechar": "?"},
+            {"cls": "main", "cmd": "ffbactive", "typechar": "?"},
+        ], timeout=2.0)
+        rate, cfrate, active = replies
         try:
             rate_val = int(rate) if rate is not None else 0
         except ValueError:
@@ -497,8 +530,11 @@ class SerialBackend:
     def get_joystick_rates(self) -> Dict:
         if not self.is_connected():
             return {"current": None, "modes": []}
-        modes_reply = self.request("main", "hidsendspd", typechar="!")
-        current_reply = self.request("main", "hidsendspd", typechar="?")
+        replies = self.request_many([
+            {"cls": "main", "cmd": "hidsendspd", "typechar": "!"},
+            {"cls": "main", "cmd": "hidsendspd", "typechar": "?"},
+        ])
+        modes_reply, current_reply = replies
         try:
             current = int(current_reply) if current_reply is not None else None
         except ValueError:

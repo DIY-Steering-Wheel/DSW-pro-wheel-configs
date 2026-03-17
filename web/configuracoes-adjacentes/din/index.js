@@ -112,8 +112,11 @@ async function loadDin() {
 
   if (hint) hint.textContent = "Carregando...";
 
-  // ── Step 1: Discover button source types via main.lsbtn (like OLD UI) ──
-  const lsbtnReply = await api.serial_request("main", "lsbtn", 0, null, "?");
+  // ── Step 1: Discover button source types and btntypes in one batch ──
+  const [lsbtnReply, btntypesReply] = await api.serial_request_many([
+    { cls: "main", cmd: "lsbtn", instance: 0, typechar: "?" },
+    { cls: "main", cmd: "btntypes", instance: 0, typechar: "?" },
+  ]);
   console.log("[DIN] main.lsbtn? reply:", JSON.stringify(lsbtnReply));
 
   if (!lsbtnReply || lsbtnReply.trim() === "") {
@@ -144,7 +147,6 @@ async function loadDin() {
   console.log("[DIN] Found D-Pins: id =", dinClassId, "name =", dinEntry.name);
 
   // ── Step 2: Check if D-Pins type is active via main.btntypes ──
-  const btntypesReply = await api.serial_request("main", "btntypes", 0, null, "?");
   console.log("[DIN] main.btntypes? reply:", JSON.stringify(btntypesReply));
   btntypesBitmask = parseInt(btntypesReply, 10) || 0;
   dinTypesActive = (btntypesBitmask & (1 << dinClassId)) !== 0;
@@ -166,13 +168,14 @@ async function loadDin() {
   if (overlay) overlay.style.display = "none";
   if (mainContent) mainContent.style.display = "";
 
-  // ── Step 3: Now query dpin class (like OLD UI LocalButtonsConf.readValues) ──
-  const pinsReply = await api.serial_request("dpin", "pins", 0, null, "?");
+  // ── Step 3: Now query dpin class (batch pins+mask+pulse+polarity) ──
+  const [pinsReply, maskReply, pulseReply, polReply] = await api.serial_request_many([
+    { cls: "dpin", cmd: "pins", instance: 0, typechar: "?" },
+    { cls: "dpin", cmd: "mask", instance: 0, typechar: "?" },
+    { cls: "dpin", cmd: "pulse", instance: 0, typechar: "?" },
+    { cls: "dpin", cmd: "polarity", instance: 0, typechar: "?" },
+  ]);
   console.log("[DIN] dpin.pins? reply:", JSON.stringify(pinsReply));
-
-  const maskReply = await api.serial_request("dpin", "mask", 0, null, "?");
-  const pulseReply = await api.serial_request("dpin", "pulse", 0, null, "?");
-  const polReply = await api.serial_request("dpin", "polarity", 0, null, "?");
 
   dinCount = parseInt(pinsReply, 10) || 0;
   dinMask = parseInt(maskReply, 10) || 0;
@@ -198,9 +201,11 @@ async function applyDin() {
 
   dinMask = mask;
 
-  await api.serial_set_value("dpin", "mask", mask, 0, null);
-  await api.serial_set_value("dpin", "pulse", pulse, 0, null);
-  await api.serial_set_value("dpin", "polarity", invert, 0, null);
+  await api.serial_set_many([
+    { cls: "dpin", cmd: "mask", value: mask, instance: 0 },
+    { cls: "dpin", cmd: "pulse", value: pulse, instance: 0 },
+    { cls: "dpin", cmd: "polarity", value: invert, instance: 0 },
+  ]);
   if (hint) hint.textContent = "Aplicado";
 }
 

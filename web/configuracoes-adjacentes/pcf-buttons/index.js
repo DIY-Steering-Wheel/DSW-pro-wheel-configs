@@ -32,9 +32,11 @@ async function applyPcf() {
   const invert = document.getElementById('pcfInvert')?.checked ? 1 : 0;
   const fast = document.getElementById('pcfFast')?.checked ? 1 : 0;
 
-  await api.serial_set_value('pcfbtn', 'btnnum', amount, 0, null);
-  await api.serial_set_value('pcfbtn', 'invert', invert, 0, null);
-  await api.serial_set_value('i2c', 'speed', fast, 0, null);
+  await api.serial_set_many([
+    { cls: 'pcfbtn', cmd: 'btnnum', value: amount, instance: 0 },
+    { cls: 'pcfbtn', cmd: 'invert', value: invert, instance: 0 },
+    { cls: 'i2c', cmd: 'speed', value: fast, instance: 0 },
+  ]);
 
   updateStatus('Aplicado');
 }

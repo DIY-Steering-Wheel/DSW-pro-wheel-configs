@@ -130,9 +130,11 @@ async function applyOdrive() {
   const torque = parseFloat(document.getElementById('odriveMaxTorque')?.value);
   const store = document.getElementById('odriveStorePos')?.checked ? 1 : 0;
 
-  if (!Number.isNaN(canId)) await api.serial_set_value('odrv', 'canid', canId, inst, null);
-  if (!Number.isNaN(torque)) await api.serial_set_value('odrv', 'maxtorque', Math.round(torque * 100), inst, null);
-  await api.serial_set_value('odrv', 'storepos', store, inst, null);
+  const sets = [];
+  if (!Number.isNaN(canId)) sets.push({ cls: 'odrv', cmd: 'canid', value: canId, instance: inst });
+  if (!Number.isNaN(torque)) sets.push({ cls: 'odrv', cmd: 'maxtorque', value: Math.round(torque * 100), instance: inst });
+  sets.push({ cls: 'odrv', cmd: 'storepos', value: store, instance: inst });
+  await api.serial_set_many(sets);
 
   updateStatus('Aplicado');
 }

@@ -27,8 +27,10 @@ async function loadShifter() {
     return;
   }
 
-  const listReply = await api.serial_request("shifter", "mode", 0, null, "!");
-  const currentReply = await api.serial_request("shifter", "mode", 0, null, "?");
+  const [listReply, currentReply] = await api.serial_request_many([
+    { cls: "shifter", cmd: "mode", instance: 0, typechar: "!" },
+    { cls: "shifter", cmd: "mode", instance: 0, typechar: "?" },
+  ]);
   const modes = parseModes(listReply);
   const current = parseInt(currentReply, 10);
   const isEnabled = Number.isFinite(current) && current > 0;

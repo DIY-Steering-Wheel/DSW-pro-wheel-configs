@@ -2200,11 +2200,11 @@ async function loadIoDefinitions() {
     };
     return;
   }
-  const [lsain, aintypes, lsbtn, btntypes] = await Promise.all([
-    window.pywebview.api.serial_request("main", "lsain", 0, null, "?"),
-    window.pywebview.api.serial_request("main", "aintypes", 0, null, "?"),
-    window.pywebview.api.serial_request("main", "lsbtn", 0, null, "?"),
-    window.pywebview.api.serial_request("main", "btntypes", 0, null, "?"),
+  const [lsain, aintypes, lsbtn, btntypes] = await window.pywebview.api.serial_request_many([
+    { cls: "main", cmd: "lsain", instance: 0, typechar: "?" },
+    { cls: "main", cmd: "aintypes", instance: 0, typechar: "?" },
+    { cls: "main", cmd: "lsbtn", instance: 0, typechar: "?" },
+    { cls: "main", cmd: "btntypes", instance: 0, typechar: "?" },
   ]);
 
   const ainList = parseLsList(lsain);
@@ -2285,9 +2285,9 @@ async function connectSelected() {
   await loadClassDefinitions();
   await loadActiveClasses();
   await loadIoDefinitions();
-  renderClasses();
   await loadMainClasses();
   await loadJoystickRates();
+  renderClasses();
   startConnectionCheck();
 }
 
@@ -2493,18 +2493,16 @@ async function refreshAll() {
   try {
     await loadPorts();
     setSaveStatus("Carregando... 2");
-    await loadProfiles();
-    setSaveStatus("Carregando... 3");
     await loadStatus();
-    setSaveStatus("Carregando... 4");
+    setSaveStatus("Carregando... 3");
     await loadCatalog();
-    setSaveStatus("Carregando... 5");
+    setSaveStatus("Carregando... 4");
     await loadAdjacentConfigs();
+    setSaveStatus("Carregando... 5");
+    await loadProfiles();
     await loadClassDefinitions();
-    await loadIoDefinitions();
-    setSaveStatus("Carregando... 6");
     await loadActiveClasses();
-    setSaveStatus("Carregando... 7");
+    await loadIoDefinitions();
     await loadMainClasses();
     await loadJoystickRates();
     setSaveStatus("Pronto");

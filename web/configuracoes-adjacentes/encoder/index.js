@@ -143,27 +143,33 @@ async function applyEncoder() {
   if (id === 2) {
     const cpr = parseInt(document.getElementById("localCpr")?.value, 10) || 0;
     const idx = document.getElementById("localIndex")?.checked ? 1 : 0;
-    await api.serial_set_value("localenc", "cpr", cpr, 0, null);
-    await api.serial_set_value("localenc", "index", idx, 0, null);
+    await api.serial_set_many([
+      { cls: "localenc", cmd: "cpr", value: cpr, instance: 0 },
+      { cls: "localenc", cmd: "index", value: idx, instance: 0 },
+    ]);
   } else if (id === 4) {
     const cs = parseInt(document.getElementById("mtCs")?.value, 10) || 1;
     const mode = parseInt(document.getElementById("mtMode")?.value, 10);
     const speed = parseInt(document.getElementById("mtSpeed")?.value, 10);
-    await api.serial_set_value("mtenc", "cs", cs, 0, null);
-    if (!Number.isNaN(mode)) await api.serial_set_value("mtenc", "mode", mode, 0, null);
-    if (!Number.isNaN(speed)) await api.serial_set_value("mtenc", "speed", speed, 0, null);
+    const sets = [{ cls: "mtenc", cmd: "cs", value: cs, instance: 0 }];
+    if (!Number.isNaN(mode)) sets.push({ cls: "mtenc", cmd: "mode", value: mode, instance: 0 });
+    if (!Number.isNaN(speed)) sets.push({ cls: "mtenc", cmd: "speed", value: speed, instance: 0 });
+    await api.serial_set_many(sets);
   } else if (id === 5) {
     const bits = parseInt(document.getElementById("bissBits")?.value, 10) || 1;
     const dir = document.getElementById("bissDir")?.checked ? 1 : 0;
-    await api.serial_set_value("bissenc", "bits", bits, 0, null);
-    await api.serial_set_value("bissenc", "dir", dir, 0, null);
+    await api.serial_set_many([
+      { cls: "bissenc", cmd: "bits", value: bits, instance: 0 },
+      { cls: "bissenc", cmd: "dir", value: dir, instance: 0 },
+    ]);
   } else if (id === 6) {
     const bits = parseInt(document.getElementById("ssiBits")?.value, 10) || 1;
     const mode = parseInt(document.getElementById("ssiMode")?.value, 10);
     const speed = parseInt(document.getElementById("ssiSpeed")?.value, 10);
-    await api.serial_set_value("ssienc", "bits", bits, 0, null);
-    if (!Number.isNaN(mode)) await api.serial_set_value("ssienc", "mode", mode, 0, null);
-    if (!Number.isNaN(speed)) await api.serial_set_value("ssienc", "speed", speed, 0, null);
+    const sets = [{ cls: "ssienc", cmd: "bits", value: bits, instance: 0 }];
+    if (!Number.isNaN(mode)) sets.push({ cls: "ssienc", cmd: "mode", value: mode, instance: 0 });
+    if (!Number.isNaN(speed)) sets.push({ cls: "ssienc", cmd: "speed", value: speed, instance: 0 });
+    await api.serial_set_many(sets);
   }
 
   if (hint) hint.textContent = "Aplicado";

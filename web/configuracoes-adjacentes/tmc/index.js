@@ -199,25 +199,27 @@ async function applyTmc() {
   const trqMode = parseInt(document.getElementById('tmcTorqueFilter')?.value, 10);
   const trqFreq = parseInt(document.getElementById('tmcTorqueFilterFreq')?.value, 10);
 
-  if (!Number.isNaN(mtype)) await api.serial_set_value('tmc', 'mtype', mtype, inst, null);
-  if (!Number.isNaN(encsrc)) await api.serial_set_value('tmc', 'encsrc', encsrc, inst, null);
-  if (!Number.isNaN(poles)) await api.serial_set_value('tmc', 'poles', poles, inst, null);
-  if (!Number.isNaN(cpr)) await api.serial_set_value('tmc', 'cpr', cpr, inst, null);
-  if (!Number.isNaN(torqueP)) await api.serial_set_value('tmc', 'torqueP', torqueP, inst, null);
-  if (!Number.isNaN(torqueI)) await api.serial_set_value('tmc', 'torqueI', torqueI, inst, null);
-  if (!Number.isNaN(fluxP)) await api.serial_set_value('tmc', 'fluxP', fluxP, inst, null);
-  if (!Number.isNaN(fluxI)) await api.serial_set_value('tmc', 'fluxI', fluxI, inst, null);
-  if (!Number.isNaN(precision)) await api.serial_set_value('tmc', 'pidPrec', precision, inst, null);
-  if (!Number.isNaN(trqMode)) await api.serial_set_value('tmc', 'trqbq_mode', trqMode, inst, null);
-  if (!Number.isNaN(trqFreq)) await api.serial_set_value('tmc', 'trqbq_f', trqFreq, inst, null);
-
-  await api.serial_set_value('tmc', 'seqpi', document.getElementById('tmcSeqPi')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'svpwm', document.getElementById('tmcSvPwm')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'invertForce', document.getElementById('tmcInvertForce')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'fluxbrake', document.getElementById('tmcFluxBrake')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'combineEncoder', document.getElementById('tmcCombineEncoder')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'abnindex', document.getElementById('tmcAbnIndex')?.checked ? 1 : 0, inst, null);
-  await api.serial_set_value('tmc', 'abnpol', document.getElementById('tmcAbnPol')?.checked ? 1 : 0, inst, null);
+  // Batch all set operations in a single IPC call
+  const sets = [];
+  if (!Number.isNaN(mtype)) sets.push({ cls: 'tmc', cmd: 'mtype', value: mtype, instance: inst });
+  if (!Number.isNaN(encsrc)) sets.push({ cls: 'tmc', cmd: 'encsrc', value: encsrc, instance: inst });
+  if (!Number.isNaN(poles)) sets.push({ cls: 'tmc', cmd: 'poles', value: poles, instance: inst });
+  if (!Number.isNaN(cpr)) sets.push({ cls: 'tmc', cmd: 'cpr', value: cpr, instance: inst });
+  if (!Number.isNaN(torqueP)) sets.push({ cls: 'tmc', cmd: 'torqueP', value: torqueP, instance: inst });
+  if (!Number.isNaN(torqueI)) sets.push({ cls: 'tmc', cmd: 'torqueI', value: torqueI, instance: inst });
+  if (!Number.isNaN(fluxP)) sets.push({ cls: 'tmc', cmd: 'fluxP', value: fluxP, instance: inst });
+  if (!Number.isNaN(fluxI)) sets.push({ cls: 'tmc', cmd: 'fluxI', value: fluxI, instance: inst });
+  if (!Number.isNaN(precision)) sets.push({ cls: 'tmc', cmd: 'pidPrec', value: precision, instance: inst });
+  if (!Number.isNaN(trqMode)) sets.push({ cls: 'tmc', cmd: 'trqbq_mode', value: trqMode, instance: inst });
+  if (!Number.isNaN(trqFreq)) sets.push({ cls: 'tmc', cmd: 'trqbq_f', value: trqFreq, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'seqpi', value: document.getElementById('tmcSeqPi')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'svpwm', value: document.getElementById('tmcSvPwm')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'invertForce', value: document.getElementById('tmcInvertForce')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'fluxbrake', value: document.getElementById('tmcFluxBrake')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'combineEncoder', value: document.getElementById('tmcCombineEncoder')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'abnindex', value: document.getElementById('tmcAbnIndex')?.checked ? 1 : 0, instance: inst });
+  sets.push({ cls: 'tmc', cmd: 'abnpol', value: document.getElementById('tmcAbnPol')?.checked ? 1 : 0, instance: inst });
+  await api.serial_set_many(sets);
 
   updateStatus('Aplicado');
 }

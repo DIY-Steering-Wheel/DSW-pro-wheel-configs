@@ -59,8 +59,10 @@ async function applyCanAnalog() {
   updateStatus('Aplicando...');
   const amount = parseInt(document.getElementById('canAnalogAmount')?.value, 10) || 1;
   const canId = parseInt(document.getElementById('canAnalogId')?.value, 10) || 1;
-  await api.serial_set_value('cananalog', 'amount', amount, 0, null);
-  await api.serial_set_value('cananalog', 'canid', canId, 0, null);
+  await api.serial_set_many([
+    { cls: 'cananalog', cmd: 'amount', value: amount, instance: 0 },
+    { cls: 'cananalog', cmd: 'canid', value: canId, instance: 0 },
+  ]);
   renderMap(amount, canId);
   updateStatus('Aplicado');
 }

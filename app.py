@@ -472,6 +472,13 @@ class Api:
         self._serial.send_value(cls, cmd, value=value, instance=instance, adr=adr)
         return {"ok": True}
 
+    def serial_set_many(self, payload: List[Dict]) -> Dict:
+        """Batch multiple set_value calls in a single IPC round-trip."""
+        if not self._serial.is_connected():
+            return {"ok": False, "error": "not_connected"}
+        self._serial.send_values_batch(payload)
+        return {"ok": True}
+
     def get_profiles(self) -> Dict:
         return {
             "current": self._profiles.get_current_profile(),

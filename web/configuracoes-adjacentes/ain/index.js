@@ -107,9 +107,16 @@ async function readLimitsFromBoard() {
   if (!api || enabledChannels === 0) return;
   const container = document.getElementById("ainLimits");
   if (!container) return;
+  // Batch all min/max requests in one call
+  const requests = [];
   for (let i = 0; i < enabledChannels; i++) {
-    const minReply = await api.serial_request("apin", "min", 0, i, "?");
-    const maxReply = await api.serial_request("apin", "max", 0, i, "?");
+    requests.push({ cls: "apin", cmd: "min", instance: 0, adr: i, typechar: "?" });
+    requests.push({ cls: "apin", cmd: "max", instance: 0, adr: i, typechar: "?" });
+  }
+  const replies = await api.serial_request_many(requests);
+  for (let i = 0; i < enabledChannels; i++) {
+    const minReply = replies[i * 2];
+    const maxReply = replies[i * 2 + 1];
     const minVal = (parseInt(minReply, 10) || 0) + 0x7FFF;
     const maxVal = (parseInt(maxReply, 10) || 0) + 0x7FFF;
     limitsData[i] = { min: minVal, max: maxVal, rawVal: 0 };
@@ -143,22 +150,33 @@ async function pollValues() {
   if (!api || pollInFlight) return;
   pollInFlight = true;
   try {
-    const reply = await api.serial_request("apin", "values", 0, null, "?");
-    updateValues(reply);
-    const rawReply = await api.serial_request("apin", "rawval", 0, null, "?");
-    updateRawBars(rawReply);
-    // Autorange: re-read limits every 5th cycle (~5s) to reduce serial load
+    // Batch values + rawval in a single serial transaction
+    const requests = [
+      { cls: "apin", cmd: "values", instance: 0, typechar: "?" },
+      { cls: "apin", cmd: "rawval", instance: 0, typechar: "?" },
+    ];
+    // Autorange: batch limit reads every 5th cycle
     const autoEl = document.getElementById("ainAutorange");
     autorangePollCounter++;
-    if (autoEl?.checked && enabledChannels > 0 && autorangePollCounter >= 5) {
+    const needLimits = autoEl?.checked && enabledChannels > 0 && autorangePollCounter >= 5;
+    if (needLimits) {
       autorangePollCounter = 0;
       for (let i = 0; i < enabledChannels; i++) {
-        const minR = await api.serial_request("apin", "min", 0, i, "?");
-        const maxR = await api.serial_request("apin", "max", 0, i, "?");
+        requests.push({ cls: "apin", cmd: "min", instance: 0, adr: i, typechar: "?" });
+        requests.push({ cls: "apin", cmd: "max", instance: 0, adr: i, typechar: "?" });
+      }
+    }
+    const replies = await api.serial_request_many(requests);
+    updateValues(replies[0]);
+    updateRawBars(replies[1]);
+    if (needLimits) {
+      const limContainer = document.getElementById("ainLimits");
+      for (let i = 0; i < enabledChannels; i++) {
+        const minR = replies[2 + i * 2];
+        const maxR = replies[2 + i * 2 + 1];
         const minV = (parseInt(minR, 10) || 0) + 0x7FFF;
         const maxV = (parseInt(maxR, 10) || 0) + 0x7FFF;
         limitsData[i] = { ...limitsData[i], min: minV, max: maxV };
-        const limContainer = document.getElementById("ainLimits");
         const minSlider = limContainer?.querySelector(`.limit-min[data-limch="${i}"]`);
         const maxSlider = limContainer?.querySelector(`.limit-max[data-limch="${i}"]`);
         const valSpan = limContainer?.querySelector(`.limit-vals[data-limch="${i}"]`);
@@ -176,7 +194,7 @@ async function pollValues() {
 
 function startPolling() {
   stopPolling();
-  valueTimer = setInterval(pollValues, 1000);
+  valueTimer = setInterval(pollValues, 500);
 }
 
 function stopPolling() {
@@ -227,8 +245,11 @@ async function loadAin() {
 
   if (hint) hint.textContent = "Carregando...";
 
-  // ── Step 1: Discover analog source types via main.lsain (like OLD UI ffb_ui.py) ──
-  const lsainReply = await api.serial_request("main", "lsain", 0, null, "?");
+  // ── Step 1: Discover analog source types and aintypes in one batch ──
+  const [lsainReply, aintypesReply] = await api.serial_request_many([
+    { cls: "main", cmd: "lsain", instance: 0, typechar: "?" },
+    { cls: "main", cmd: "aintypes", instance: 0, typechar: "?" },
+  ]);
   console.log("[AIN] main.lsain? reply:", JSON.stringify(lsainReply));
 
   if (!lsainReply || lsainReply.trim() === "") {
@@ -263,7 +284,6 @@ async function loadAin() {
 
   // ── Step 2: Check if AIN-Pins type is active via main.aintypes ──
   //    If not active, auto-activate it (like OLD UI's checkbox in ffb_ui.py)
-  const aintypesReply = await api.serial_request("main", "aintypes", 0, null, "?");
   console.log("[AIN] main.aintypes? reply:", JSON.stringify(aintypesReply));
   aintypesBitmask = parseInt(aintypesReply, 10) || 0;
   ainTypesActive = (aintypesBitmask & (1 << ainClassId)) !== 0;
@@ -285,8 +305,13 @@ async function loadAin() {
   if (overlay) overlay.style.display = "none";
   if (mainContent) mainContent.style.display = "";
 
-  // ── Step 3: Now query apin class (like OLD UI AnalogInputConf.readValues) ──
-  const pinsReply = await api.serial_request("apin", "pins", 0, null, "?");
+  // ── Step 3: Now query apin class (batch pins+mask+filter+autocal) ──
+  const [pinsReply, maskReply, filterReply, autoReply] = await api.serial_request_many([
+    { cls: "apin", cmd: "pins", instance: 0, typechar: "?" },
+    { cls: "apin", cmd: "mask", instance: 0, typechar: "?" },
+    { cls: "apin", cmd: "filter", instance: 0, typechar: "?" },
+    { cls: "apin", cmd: "autocal", instance: 0, typechar: "?" },
+  ]);
   console.log("[AIN] apin.pins? reply:", JSON.stringify(pinsReply));
 
   ainCount = parseInt(pinsReply, 10);
@@ -302,10 +327,6 @@ async function loadAin() {
 
   // Class is active and has pins - show limits card
   if (limCard) limCard.style.display = "";
-
-  const maskReply = await api.serial_request("apin", "mask", 0, null, "?");
-  const filterReply = await api.serial_request("apin", "filter", 0, null, "?");
-  const autoReply = await api.serial_request("apin", "autocal", 0, null, "?");
 
   console.log("[AIN] mask:", maskReply, "filter:", filterReply, "autocal:", autoReply);
 
@@ -345,19 +366,24 @@ async function applyAin() {
   const filter = document.getElementById("ainFilter")?.checked ? 1 : 0;
   const autorange = document.getElementById("ainAutorange")?.checked ? 1 : 0;
 
-  await api.serial_set_value("apin", "mask", mask, 0, null);
-  await api.serial_set_value("apin", "filter", filter, 0, null);
-  await api.serial_set_value("apin", "autocal", autorange, 0, null);
+  // Batch all set operations in a single IPC call
+  const sets = [
+    { cls: "apin", cmd: "mask", value: mask, instance: 0 },
+    { cls: "apin", cmd: "filter", value: filter, instance: 0 },
+    { cls: "apin", cmd: "autocal", value: autorange, instance: 0 },
+  ];
 
   // Send manual limits only when autorange is off
   if (!autorange) {
     for (let i = 0; i < enabledChannels && i < limitsData.length; i++) {
       const minSigned = limitsData[i].min - 0x7FFF;
       const maxSigned = limitsData[i].max - 0x7FFF;
-      await api.serial_set_value("apin", "min", minSigned, 0, i);
-      await api.serial_set_value("apin", "max", maxSigned, 0, i);
+      sets.push({ cls: "apin", cmd: "min", value: minSigned, instance: 0, adr: i });
+      sets.push({ cls: "apin", cmd: "max", value: maxSigned, instance: 0, adr: i });
     }
   }
+
+  await api.serial_set_many(sets);
 
   // Rebuild limits grid for new channel count
   buildLimitsGrid(limContainer, enabledChannels);

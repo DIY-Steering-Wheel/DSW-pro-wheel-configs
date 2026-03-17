@@ -73,11 +73,20 @@ async function loadFfb() {
     return;
   }
 
-  /* Gain scalers */
-  const springInfo = await api.serial_request("fx", "spring", 0, null, "!");
-  const damperInfo = await api.serial_request("fx", "damper", 0, null, "!");
-  const frictionInfo = await api.serial_request("fx", "friction", 0, null, "!");
-  const inertiaInfo = await api.serial_request("fx", "inertia", 0, null, "!");
+  /* Batch all info + value requests in a single serial transaction */
+  const replies = await api.serial_request_many([
+    { cls: "fx", cmd: "spring", instance: 0, typechar: "!" },
+    { cls: "fx", cmd: "damper", instance: 0, typechar: "!" },
+    { cls: "fx", cmd: "friction", instance: 0, typechar: "!" },
+    { cls: "fx", cmd: "inertia", instance: 0, typechar: "!" },
+    { cls: "fx", cmd: "spring", instance: 0, typechar: "?" },
+    { cls: "fx", cmd: "damper", instance: 0, typechar: "?" },
+    { cls: "fx", cmd: "friction", instance: 0, typechar: "?" },
+    { cls: "fx", cmd: "inertia", instance: 0, typechar: "?" },
+    { cls: "fx", cmd: "filterCfFreq", instance: 0, typechar: "?" },
+    { cls: "fx", cmd: "filterCfQ", instance: 0, typechar: "?" },
+  ]);
+  const [springInfo, damperInfo, frictionInfo, inertiaInfo, springVal, damperVal, frictionVal, inertiaVal, cfFreqVal, cfQVal] = replies;
 
   const si = mapInfoString(springInfo);
   const di = mapInfoString(damperInfo);
@@ -88,14 +97,6 @@ async function loadFfb() {
   if (di.scale > 0) damperGain = di.scale;
   if (fi.scale > 0) frictionGain = fi.scale;
   if (ii.scale > 0) inertiaGain = ii.scale;
-
-  /* Current gain values */
-  const springVal = await api.serial_request("fx", "spring", 0, null, "?");
-  const damperVal = await api.serial_request("fx", "damper", 0, null, "?");
-  const frictionVal = await api.serial_request("fx", "friction", 0, null, "?");
-  const inertiaVal = await api.serial_request("fx", "inertia", 0, null, "?");
-  const cfFreqVal = await api.serial_request("fx", "filterCfFreq", 0, null, "?");
-  const cfQVal = await api.serial_request("fx", "filterCfQ", 0, null, "?");
 
   function setSlider(sliderId, valId, rawVal, gain) {
     const slider = document.getElementById(sliderId);

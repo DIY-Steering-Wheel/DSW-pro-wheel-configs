@@ -63,9 +63,11 @@ async function applyPwm() {
   const mode = parseInt(document.getElementById("pwmMode")?.value, 10);
   const invert = document.getElementById("pwmInvert")?.checked ? 1 : 0;
 
-  if (!Number.isNaN(mode)) await api.serial_set_value("pwmdrv", "mode", mode, 0, null);
-  if (!Number.isNaN(freq)) await api.serial_set_value("pwmdrv", "freq", freq, 0, null);
-  await api.serial_set_value("pwmdrv", "dir", invert, 0, null);
+  const sets = [];
+  if (!Number.isNaN(mode)) sets.push({ cls: "pwmdrv", cmd: "mode", value: mode, instance: 0 });
+  if (!Number.isNaN(freq)) sets.push({ cls: "pwmdrv", cmd: "freq", value: freq, instance: 0 });
+  sets.push({ cls: "pwmdrv", cmd: "dir", value: invert, instance: 0 });
+  await api.serial_set_many(sets);
 
   if (hint) hint.textContent = "Aplicado";
   await loadPwm();

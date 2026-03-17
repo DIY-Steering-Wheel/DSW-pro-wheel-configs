@@ -138,9 +138,11 @@ async function applyVesc() {
   const vescId = parseInt(document.getElementById('vescCanId')?.value, 10);
   const useEnc = document.getElementById('vescUseEncoder')?.checked ? 1 : 0;
 
-  if (!Number.isNaN(offb)) await api.serial_set_value('vesc', 'offbcanid', offb, inst, null);
-  if (!Number.isNaN(vescId)) await api.serial_set_value('vesc', 'vesccanid', vescId, inst, null);
-  await api.serial_set_value('vesc', 'useencoder', useEnc, inst, null);
+  const sets = [];
+  if (!Number.isNaN(offb)) sets.push({ cls: 'vesc', cmd: 'offbcanid', value: offb, instance: inst });
+  if (!Number.isNaN(vescId)) sets.push({ cls: 'vesc', cmd: 'vesccanid', value: vescId, instance: inst });
+  sets.push({ cls: 'vesc', cmd: 'useencoder', value: useEnc, instance: inst });
+  await api.serial_set_many(sets);
 
   updateStatus('Aplicado');
 }

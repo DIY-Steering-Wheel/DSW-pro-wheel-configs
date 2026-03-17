@@ -48,9 +48,11 @@ async function applyCanButtons() {
   const invert = document.getElementById('canBtnInvert')?.checked ? 1 : 0;
   const canId = parseInt(document.getElementById('canBtnId')?.value, 10) || 1;
 
-  await api.serial_set_value('canbtn', 'btnnum', amount, 0, null);
-  await api.serial_set_value('canbtn', 'invert', invert, 0, null);
-  await api.serial_set_value('canbtn', 'canid', canId, 0, null);
+  await api.serial_set_many([
+    { cls: 'canbtn', cmd: 'btnnum', value: amount, instance: 0 },
+    { cls: 'canbtn', cmd: 'invert', value: invert, instance: 0 },
+    { cls: 'canbtn', cmd: 'canid', value: canId, instance: 0 },
+  ]);
 
   renderMap(amount, invert === 1);
   updateStatus('Aplicado');
