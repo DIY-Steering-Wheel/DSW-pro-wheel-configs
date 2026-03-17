@@ -2,8 +2,11 @@
   "id": "can-analog",
   "title": "CAN Anal?gico",
   "icon": "bi-broadcast",
+  "class_id": 144,
   "clsname_match": [
-    "cananalog"
+    "cananalog",
+    "can-analog",
+    "canain"
   ],
   "show_when_connected": false,
   "requires_active": true

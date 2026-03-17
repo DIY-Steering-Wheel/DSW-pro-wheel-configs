@@ -113,7 +113,18 @@ MENU_SECTIONS = [
 ]
 
 COMMAND_INDEX = {
-    "sys": ["lsactive", "swver", "reboot", "flashdump", "flashraw", "heapfree", "temp", "debug"],
+    "sys": [
+        "lsactive",
+        "swver",
+        "temp",
+        "heapfree",
+        "errors",
+        "errorsclr",
+        "save",
+        "flashdump",
+        "flashraw",
+        "reboot",
+    ],
     "main": ["id"],
 }
 

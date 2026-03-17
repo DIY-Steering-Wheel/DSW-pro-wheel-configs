@@ -2,9 +2,12 @@
   "id": "pcf-buttons",
   "title": "PCF Buttons",
   "icon": "bi-toggle-on",
+  "class_id": 147,
   "clsname_match": [
     "pcfbtn",
-    "pcf"
+    "pcf",
+    "pcf8574",
+    "pcf8575"
   ],
   "show_when_connected": false,
   "requires_active": true

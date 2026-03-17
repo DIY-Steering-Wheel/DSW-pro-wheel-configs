@@ -2,8 +2,11 @@
   "id": "can-buttons",
   "title": "CAN Bot?es",
   "icon": "bi-broadcast",
+  "class_id": 146,
   "clsname_match": [
-    "canbtn"
+    "canbtn",
+    "canbuttons",
+    "can-btn"
   ],
   "show_when_connected": false,
   "requires_active": true

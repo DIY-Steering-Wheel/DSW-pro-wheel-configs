@@ -2,9 +2,13 @@
   "id": "ads-analog",
   "title": "ADS Analog",
   "icon": "bi-filter-circle",
+  "class_id": 145,
   "clsname_match": [
     "adsanalog",
-    "ads"
+    "ads",
+    "ads111x",
+    "ads1115",
+    "ads1110"
   ],
   "show_when_connected": false,
   "requires_active": true
