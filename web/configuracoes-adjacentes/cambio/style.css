@@ -1,4 +1,12 @@
-﻿.adjacent-page {
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.adjacent-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -51,3 +59,4 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+

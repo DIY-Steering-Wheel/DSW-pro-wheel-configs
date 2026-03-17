@@ -1,4 +1,12 @@
-﻿.adjacent-page {
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.adjacent-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -10,7 +18,7 @@
   box-sizing: border-box;
 }
 
-/* ── Group boxes (fieldset) ── */
+/* -- Group boxes (fieldset) -- */
 .pwm-group {
   border: 1px solid rgba(90, 126, 190, 0.35);
   border-radius: 10px;
@@ -26,7 +34,7 @@
   letter-spacing: 0.4px;
 }
 
-/* ── Form grid (label + control) ── */
+/* -- Form grid (label + control) -- */
 .pwm-form {
   display: grid;
   grid-template-columns: 140px 1fr;
@@ -86,7 +94,7 @@
   color: var(--accent, #5dade2);
 }
 
-/* ── Usage section ── */
+/* -- Usage section -- */
 .pwm-usage {
   flex: 1;
 }
@@ -117,3 +125,4 @@
   color: var(--text-secondary, #b0bec5);
   font-size: 12.5px;
 }
+

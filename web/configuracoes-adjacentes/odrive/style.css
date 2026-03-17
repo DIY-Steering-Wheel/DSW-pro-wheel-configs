@@ -1,3 +1,11 @@
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
 .adjacent-page {
   display: flex;
   flex-direction: column;
@@ -107,3 +115,4 @@
 .hint-card {
   background: rgba(20, 30, 54, 0.6);
 }
+

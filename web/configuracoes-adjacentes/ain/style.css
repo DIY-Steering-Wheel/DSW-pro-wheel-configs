@@ -1,4 +1,12 @@
-﻿.adjacent-page {
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.adjacent-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -131,7 +139,7 @@
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
 }
 
-/* ── Manual limits grid ── */
+/* -- Manual limits grid -- */
 .limits-grid {
   display: flex;
   flex-direction: column;
@@ -232,7 +240,7 @@
   color: var(--text-muted);
 }
 
-/* ── Activation overlay ── */
+/* -- Activation overlay -- */
 .activation-overlay {
   display: flex;
   align-items: center;
@@ -278,3 +286,4 @@
   display: block;
   margin-top: 10px;
 }
+

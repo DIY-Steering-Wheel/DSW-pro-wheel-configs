@@ -1,4 +1,12 @@
-﻿.adjacent-page {
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.adjacent-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -110,7 +118,7 @@
   accent-color: var(--accent);
 }
 
-/* ── Activation overlay ── */
+/* -- Activation overlay -- */
 .activation-overlay {
   display: flex;
   align-items: center;
@@ -156,3 +164,4 @@
   display: block;
   margin-top: 10px;
 }
+

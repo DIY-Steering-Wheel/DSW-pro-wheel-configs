@@ -353,6 +353,7 @@ function setActiveView(viewKey, title) {
   
   const isAdjacent = String(viewKey).startsWith("adjacent:");
   console.log(`[setActiveView] isAdjacent: ${isAdjacent}`);
+  document.body?.classList.toggle("adjacent-active", isAdjacent);
   currentViewKey = viewKey || "dashboard";
   if (!isMonitoringView(viewKey)) {
     stopMonitoringPolling();

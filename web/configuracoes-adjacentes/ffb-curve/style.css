@@ -1,3 +1,11 @@
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
 .adjacent-page {
   display: flex;
   flex-direction: column;
@@ -118,3 +126,4 @@
     grid-template-columns: 1fr;
   }
 }
+
