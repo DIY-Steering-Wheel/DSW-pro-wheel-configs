@@ -74,13 +74,13 @@ async function loadTuning() {
   const axis = currentAxis;
   updateStatus('Carregando...');
 
-  const [profile, cpr, filterSpeed, filterAccel, reduction, reductionAvail] = await Promise.all([
-    api.serial_request('axis', 'filterProfile_id', axis, null, '?'),
-    api.serial_request('axis', 'cpr', axis, null, '?'),
-    api.serial_request('axis', 'filterSpeed', axis, null, '?'),
-    api.serial_request('axis', 'filterAccel', axis, null, '?'),
-    api.serial_request('axis', 'reduction', axis, null, '?'),
-    api.serial_request('axis', 'cmdinfo', axis, 17, '?'),
+  const [profile, cpr, filterSpeed, filterAccel, reduction, reductionAvail] = await api.serial_request_many([
+    { cls: 'axis', cmd: 'filterProfile_id', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'cpr', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'filterSpeed', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'filterAccel', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'reduction', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'cmdinfo', instance: axis, typechar: '?', adr: 17 },
   ]);
 
   const profileEl = document.getElementById('encProfile');
@@ -151,7 +151,6 @@ window.applyConfig = applyTuning;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadTuning();
-  document.getElementById('encTuneRefresh')?.addEventListener('click', loadTuning);
   document.getElementById('encSuggest')?.addEventListener('click', () => {
     suggestProfile();
   });

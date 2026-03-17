@@ -101,9 +101,9 @@ async function loadCurve() {
 
   const axis = currentAxis;
   updateStatus('Carregando...');
-  const [expo, scale] = await Promise.all([
-    api.serial_request('axis', 'expo', axis, null, '?'),
-    api.serial_request('axis', 'exposcale', axis, null, '?'),
+  const [expo, scale] = await api.serial_request_many([
+    { cls: 'axis', cmd: 'expo', instance: axis, typechar: '?' },
+    { cls: 'axis', cmd: 'exposcale', instance: axis, typechar: '?' },
   ]);
 
   const slider = document.getElementById('curveSlider');
@@ -148,5 +148,4 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = parseInt(e.target.value, 10) || 0;
     updateCurveLabels(val);
   });
-  document.getElementById('curveRefresh')?.addEventListener('click', loadCurve);
 });

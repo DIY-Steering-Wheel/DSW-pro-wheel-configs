@@ -158,11 +158,6 @@ class HeaderControls {
    * Handler para botão Aplicar
    */
   async handleApply() {
-    if (!this.isDirty) {
-      console.log('[HeaderControls] Nenhuma alteração pendente');
-      return;
-    }
-
     if (this.onApplyCallback && typeof this.onApplyCallback === 'function') {
       try {
         await this.onApplyCallback();

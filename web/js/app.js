@@ -100,6 +100,24 @@ function addSaveFooter(message) {
   addSystemLog(message);
 }
 
+function reportConfigResult(actionLabel, result) {
+  if (result && typeof result === "object") {
+    if (result.ok === false) {
+      const detail = result.error ? `: ${result.error}` : "";
+      setSaveStatus(`${actionLabel} com erros`);
+      addSystemLog(`${actionLabel} com erros${detail}`, "error");
+      return false;
+    }
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      setSaveStatus(`${actionLabel} com erros`);
+      addSystemLog(`${actionLabel} com erros: ${result.errors.join(", ")}`, "error");
+      return false;
+    }
+  }
+  addSaveFooter(actionLabel);
+  return true;
+}
+
 function addSystemLog(message, level = "info") {
   const timestamp = new Date().toLocaleTimeString();
   terminalLog.push({ message, timestamp, isError: level === "error" });
@@ -351,6 +369,24 @@ function setActiveView(viewKey, title) {
     if (config && typeof headerControls !== 'undefined') {
       console.log(`[setActiveView] Mostrando botões para: ${config.title}`);
       headerControls.showActionsFor(configId, config.title);
+      // Tenta carregar assim que abrir a configuração
+      const loadIframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
+      const tryLoadConfig = () => {
+        if (!loadIframe?.contentWindow?.loadConfig) return;
+        Promise.resolve(loadIframe.contentWindow.loadConfig())
+          .then((result) => reportConfigResult("Tela carregada", result))
+          .catch((err) => {
+            console.error("[setActiveView] Erro ao carregar:", err);
+            setSaveStatus("Tela carregada com erros.");
+            addSystemLog(`Tela carregada com erros: ${err?.message || err}`, "error");
+          });
+      };
+      if (loadIframe?.contentWindow?.loadConfig) {
+        tryLoadConfig();
+      } else if (loadIframe) {
+        loadIframe.addEventListener("load", tryLoadConfig, { once: true });
+      }
+
       
       // Definir callbacks para esta configuração
       headerControls.onApply(() => {
@@ -362,14 +398,16 @@ function setActiveView(viewKey, title) {
         if (iframe?.contentWindow?.applyConfig) {
           console.log(`[setActiveView] Chamando applyConfig...`);
           return Promise.resolve(iframe.contentWindow.applyConfig())
-            .then(() => addSaveFooter("Configuracao aplicada."))
+            .then((result) => reportConfigResult("Configuracao aplicada", result))
             .catch((err) => {
               console.error("[setActiveView] Erro ao aplicar:", err);
               setSaveStatus("Falha ao aplicar configuracao.");
+              addSystemLog(`Falha ao aplicar configuracao: ${err?.message || err}`, "error");
             });
         } else {
           console.log(`[setActiveView] applyConfig não encontrada na iframe`);
           setSaveStatus("Falha ao aplicar: interface nao disponivel.");
+          addSystemLog("Falha ao aplicar configuracao: interface nao disponivel.", "error");
         }
       });
       
@@ -382,14 +420,16 @@ function setActiveView(viewKey, title) {
         if (iframe?.contentWindow?.loadConfig) {
           console.log(`[setActiveView] Chamando loadConfig...`);
           return Promise.resolve(iframe.contentWindow.loadConfig())
-            .then(() => addSaveFooter("Configuracao recarregada."))
+            .then((result) => reportConfigResult("Configuracao recarregada", result))
             .catch((err) => {
               console.error("[setActiveView] Erro ao recarregar:", err);
               setSaveStatus("Falha ao recarregar configuracao.");
+              addSystemLog(`Falha ao recarregar configuracao: ${err?.message || err}`, "error");
             });
         } else {
           console.log(`[setActiveView] loadConfig não encontrada na iframe`);
           setSaveStatus("Falha ao recarregar: interface nao disponivel.");
+          addSystemLog("Falha ao recarregar configuracao: interface nao disponivel.", "error");
         }
       });
     } else {
@@ -588,7 +628,8 @@ function renderClasses() {
 
     const optionValues = options
       .map((entry) => {
-        const disabled = entry.creatable === false && entry.id !== selected ? "disabled" : "";
+        const blockByCreatable = definition.key !== "encoder";
+        const disabled = blockByCreatable && entry.creatable === false && entry.id !== selected ? "disabled" : "";
         return `<option value="${entry.id}" ${disabled}>${optionLabel(entry)}</option>`;
       })
       .join("");
@@ -2466,6 +2507,9 @@ async function refreshAll() {
     await loadMainClasses();
     await loadJoystickRates();
     setSaveStatus("Pronto");
+    if (lastStatus?.connected) {
+      startConnectionCheck();
+    }
   } catch (err) {
     setSaveStatus("Erro ao carregar");
     addError("Erro ao Carregar", err.message, "error");

@@ -100,11 +100,11 @@ async function loadInstances() {
 
 async function loadStatus(instance) {
   if (!api || instance === null || instance === undefined) return;
-  const [state, temp, torque, driver] = await Promise.all([
-    api.serial_request('tmc', 'state', instance, null, '?'),
-    api.serial_request('tmc', 'temp', instance, null, '?'),
-    api.serial_request('tmc', 'acttrq', instance, null, '?'),
-    api.serial_request('tmc', 'tmctype', instance, null, '?'),
+  const [state, temp, torque, driver] = await api.serial_request_many([
+    { cls: 'tmc', cmd: 'state', instance, typechar: '?' },
+    { cls: 'tmc', cmd: 'temp', instance, typechar: '?' },
+    { cls: 'tmc', cmd: 'acttrq', instance, typechar: '?' },
+    { cls: 'tmc', cmd: 'tmctype', instance, typechar: '?' },
   ]);
   const stateEl = document.getElementById('tmcState');
   const tempEl = document.getElementById('tmcTemp');
@@ -128,13 +128,13 @@ async function loadTmc() {
   const inst = currentInstance;
   updateStatus('Carregando...');
 
-  const [mtypeList, mtypeCur, encList, encCur, poles, cpr] = await Promise.all([
-    api.serial_request('tmc', 'mtype', inst, null, '!'),
-    api.serial_request('tmc', 'mtype', inst, null, '?'),
-    api.serial_request('tmc', 'encsrc', inst, null, '!'),
-    api.serial_request('tmc', 'encsrc', inst, null, '?'),
-    api.serial_request('tmc', 'poles', inst, null, '?'),
-    api.serial_request('tmc', 'cpr', inst, null, '?'),
+  const [mtypeList, mtypeCur, encList, encCur, poles, cpr] = await api.serial_request_many([
+    { cls: 'tmc', cmd: 'mtype', instance: inst, typechar: '!' },
+    { cls: 'tmc', cmd: 'mtype', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'encsrc', instance: inst, typechar: '!' },
+    { cls: 'tmc', cmd: 'encsrc', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'poles', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'cpr', instance: inst, typechar: '?' },
   ]);
 
   fillSelect(document.getElementById('tmcMotorType'), parseList(mtypeList), parseInt(mtypeCur, 10));
@@ -142,22 +142,22 @@ async function loadTmc() {
   setValue('tmcPoles', parseInt(poles, 10) || 0);
   setValue('tmcCpr', parseInt(cpr, 10) || 0);
 
-  const [torqueP, torqueI, fluxP, fluxI, pidPrec, seqpi, svpwm, invertForce, fluxBrake, combineEncoder, abnIndex, abnPol, trqMode, trqFreq, trqList] = await Promise.all([
-    api.serial_request('tmc', 'torqueP', inst, null, '?'),
-    api.serial_request('tmc', 'torqueI', inst, null, '?'),
-    api.serial_request('tmc', 'fluxP', inst, null, '?'),
-    api.serial_request('tmc', 'fluxI', inst, null, '?'),
-    api.serial_request('tmc', 'pidPrec', inst, null, '?'),
-    api.serial_request('tmc', 'seqpi', inst, null, '?'),
-    api.serial_request('tmc', 'svpwm', inst, null, '?'),
-    api.serial_request('tmc', 'invertForce', inst, null, '?'),
-    api.serial_request('tmc', 'fluxbrake', inst, null, '?'),
-    api.serial_request('tmc', 'combineEncoder', inst, null, '?'),
-    api.serial_request('tmc', 'abnindex', inst, null, '?'),
-    api.serial_request('tmc', 'abnpol', inst, null, '?'),
-    api.serial_request('tmc', 'trqbq_mode', inst, null, '?'),
-    api.serial_request('tmc', 'trqbq_f', inst, null, '?'),
-    api.serial_request('tmc', 'trqbq_mode', inst, null, '!'),
+  const [torqueP, torqueI, fluxP, fluxI, pidPrec, seqpi, svpwm, invertForce, fluxBrake, combineEncoder, abnIndex, abnPol, trqMode, trqFreq, trqList] = await api.serial_request_many([
+    { cls: 'tmc', cmd: 'torqueP', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'torqueI', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'fluxP', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'fluxI', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'pidPrec', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'seqpi', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'svpwm', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'invertForce', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'fluxbrake', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'combineEncoder', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'abnindex', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'abnpol', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'trqbq_mode', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'trqbq_f', instance: inst, typechar: '?' },
+    { cls: 'tmc', cmd: 'trqbq_mode', instance: inst, typechar: '!' },
   ]);
 
   setValue('tmcTorqueP', parseInt(torqueP, 10) || 0);
@@ -165,7 +165,8 @@ async function loadTmc() {
   setValue('tmcFluxP', parseInt(fluxP, 10) || 0);
   setValue('tmcFluxI', parseInt(fluxI, 10) || 0);
   setValue('tmcPrecision', parseInt(pidPrec, 10) || 0);
-  const trqOptions = parseList(trqList);\n  fillSelect(document.getElementById('tmcTorqueFilter'), trqOptions.length ? trqOptions : torqueFilters, parseInt(trqMode, 10));
+  const trqOptions = parseList(trqList);
+  fillSelect(document.getElementById('tmcTorqueFilter'), trqOptions.length ? trqOptions : torqueFilters, parseInt(trqMode, 10));
   setValue('tmcTorqueFilterFreq', parseInt(trqFreq, 10) || 0);
 
   setChecked('tmcSeqPi', parseInt(seqpi, 10) > 0);
@@ -237,5 +238,4 @@ window.applyConfig = applyTmc;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadTmc();
-  document.getElementById('tmcRefresh')?.addEventListener('click', loadTmc);
 });

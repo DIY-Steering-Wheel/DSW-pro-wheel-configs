@@ -186,6 +186,67 @@ class SerialBackend:
         finally:
             self._request_lock.release()
 
+    def request_many(self, requests: List[Dict], timeout: float = 1.8) -> List[Optional[str]]:
+        if not self.is_connected():
+            return [None for _ in requests]
+        if not requests:
+            return []
+
+        if not self._request_lock.acquire(timeout=timeout):
+            SERIAL_LOG.error("REQ_MANY_LOCK_TIMEOUT")
+            return [None for _ in requests]
+
+        if self._disconnect_event.is_set() or not self.is_connected():
+            self._request_lock.release()
+            return [None for _ in requests]
+
+        results: List[Optional[str]] = [None for _ in requests]
+        events: List[threading.Event] = [threading.Event() for _ in requests]
+        callbacks: List[Dict] = []
+        payload_parts: List[str] = []
+
+        def _make_handler(idx: int):
+            def handler(reply: str) -> None:
+                results[idx] = reply
+                events[idx].set()
+            return handler
+
+        for idx, req in enumerate(requests):
+            cls = req.get("cls")
+            cmd = req.get("cmd")
+            instance = int(req.get("instance", 0) or 0)
+            adr = req.get("adr", None)
+            typechar = req.get("typechar", "?") or ""
+            if cls is None or cmd is None:
+                events[idx].set()
+                continue
+            cb = self._register_callback(cls, cmd, instance, adr, typechar, _make_handler(idx))
+            callbacks.append(cb)
+            if adr is None:
+                payload_parts.append(f"{cls}.{instance}.{cmd}{typechar};")
+            else:
+                payload_parts.append(f"{cls}.{instance}.{cmd}{typechar}{adr};")
+
+        if payload_parts:
+            self.send_raw("".join(payload_parts))
+
+        try:
+            deadline = time.monotonic() + timeout
+            while not all(evt.is_set() for evt in events) and not self._disconnect_event.is_set():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                for evt in events:
+                    if not evt.is_set():
+                        evt.wait(min(remaining, 0.2))
+        finally:
+            for cb in callbacks:
+                if cb in self._callbacks:
+                    self._callbacks.remove(cb)
+            self._request_lock.release()
+
+        return results
+
     def send_value(self, cls: str, cmd: str, value: int, instance: int = 0, adr: Optional[int] = None) -> None:
         if not self.is_connected():
             return

@@ -68,13 +68,13 @@ function updateTorqueBar(value) {
 
 async function loadStatus(inst) {
   if (!api || inst === null || inst === undefined) return;
-  const [state, voltage, errors, torque, pos, rate] = await Promise.all([
-    api.serial_request('vesc', 'vescstate', inst, null, '?'),
-    api.serial_request('vesc', 'voltage', inst, null, '?'),
-    api.serial_request('vesc', 'errorflags', inst, null, '?'),
-    api.serial_request('vesc', 'torque', inst, null, '?'),
-    api.serial_request('vesc', 'pos', inst, null, '?'),
-    api.serial_request('vesc', 'encrate', inst, null, '?'),
+  const [state, voltage, errors, torque, pos, rate] = await api.serial_request_many([
+    { cls: 'vesc', cmd: 'vescstate', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'voltage', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'errorflags', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'torque', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'pos', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'encrate', instance: inst, typechar: '?' },
   ]);
 
   const badge = document.getElementById('vescState');
@@ -105,11 +105,11 @@ async function loadVesc() {
   const inst = currentInstance;
   updateStatus('Carregando...');
 
-  const [offb, vescId, useEnc, offset] = await Promise.all([
-    api.serial_request('vesc', 'offbcanid', inst, null, '?'),
-    api.serial_request('vesc', 'vesccanid', inst, null, '?'),
-    api.serial_request('vesc', 'useencoder', inst, null, '?'),
-    api.serial_request('vesc', 'offset', inst, null, '?'),
+  const [offb, vescId, useEnc, offset] = await api.serial_request_many([
+    { cls: 'vesc', cmd: 'offbcanid', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'vesccanid', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'useencoder', instance: inst, typechar: '?' },
+    { cls: 'vesc', cmd: 'offset', instance: inst, typechar: '?' },
   ]);
 
   const offbEl = document.getElementById('vescOffbCan');
@@ -173,7 +173,6 @@ window.applyConfig = applyVesc;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadVesc();
-  document.getElementById('vescRefresh')?.addEventListener('click', loadVesc);
   document.getElementById('vescReadPos')?.addEventListener('click', readEncoderPos);
   document.getElementById('vescEraseOffset')?.addEventListener('click', eraseOffset);
   document.getElementById('vescUseEncoder')?.addEventListener('change', (e) => {

@@ -453,6 +453,12 @@ class Api:
         reply = self._serial.request(cls, cmd, instance=instance, adr=adr, typechar=typechar, timeout=timeout)
         return reply or ""
 
+    def serial_request_many(self, payload: List[Dict]) -> List[str]:
+        if not self._serial.is_connected():
+            return ["" for _ in payload]
+        replies = self._serial.request_many(payload)
+        return [item or "" for item in replies]
+
     def serial_set_value(
         self,
         cls: str,

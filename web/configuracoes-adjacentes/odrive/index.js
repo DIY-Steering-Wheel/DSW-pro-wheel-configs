@@ -72,10 +72,10 @@ async function loadInstances() {
 
 async function loadStatus(inst) {
   if (!api || inst === null || inst === undefined) return;
-  const [state, voltage, errors] = await Promise.all([
-    api.serial_request('odrv', 'state', inst, null, '?'),
-    api.serial_request('odrv', 'vbus', inst, null, '?'),
-    api.serial_request('odrv', 'errors', inst, null, '?'),
+  const [state, voltage, errors] = await api.serial_request_many([
+    { cls: 'odrv', cmd: 'state', instance: inst, typechar: '?' },
+    { cls: 'odrv', cmd: 'vbus', instance: inst, typechar: '?' },
+    { cls: 'odrv', cmd: 'errors', instance: inst, typechar: '?' },
   ]);
   const badge = document.getElementById('odriveState');
   const voltEl = document.getElementById('odriveVoltage');
@@ -102,10 +102,10 @@ async function loadOdrive() {
   const inst = currentInstance;
   updateStatus('Carregando...');
 
-  const [canId, torque, storepos] = await Promise.all([
-    api.serial_request('odrv', 'canid', inst, null, '?'),
-    api.serial_request('odrv', 'maxtorque', inst, null, '?'),
-    api.serial_request('odrv', 'storepos', inst, null, '?'),
+  const [canId, torque, storepos] = await api.serial_request_many([
+    { cls: 'odrv', cmd: 'canid', instance: inst, typechar: '?' },
+    { cls: 'odrv', cmd: 'maxtorque', instance: inst, typechar: '?' },
+    { cls: 'odrv', cmd: 'storepos', instance: inst, typechar: '?' },
   ]);
 
   const canEl = document.getElementById('odriveCanId');
@@ -153,5 +153,4 @@ window.applyConfig = applyOdrive;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadOdrive();
-  document.getElementById('odriveRefresh')?.addEventListener('click', loadOdrive);
 });

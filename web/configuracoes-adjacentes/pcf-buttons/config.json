@@ -1,0 +1,11 @@
+{
+  "id": "pcf-buttons",
+  "title": "PCF Buttons",
+  "icon": "bi-toggle-on",
+  "clsname_match": [
+    "pcfbtn",
+    "pcf"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

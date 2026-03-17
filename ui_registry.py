@@ -38,6 +38,10 @@ CLASS_REGISTRY: List[UiClass] = [
     UiClass(0x08B, "rmd", "RMD", "bi-cpu", "Controle RMD.", "motion"),
     UiClass(0x08C, "rmd_alt", "RMD", "bi-cpu", "Controle RMD.", "motion"),
     UiClass(0x005, "canremote", "CAN Remote", "bi-broadcast", "Controle CAN remoto.", "io"),
+    UiClass(0x090, "cananalog", "CAN Analog", "bi-broadcast", "Entradas analogicas via CAN.", "io"),
+    UiClass(0x091, "adsanalog", "ADS Analog", "bi-filter-circle", "Conversor ADS111x.", "io"),
+    UiClass(0x092, "canbtn", "CAN Buttons", "bi-broadcast", "Botoes digitais via CAN.", "io"),
+    UiClass(0x093, "pcfbtn", "PCF Buttons", "bi-toggle-on", "Botoes via PCF8574.", "io"),
 ]
 
 ICON_BY_CLSNAME = {
@@ -46,7 +50,7 @@ ICON_BY_CLSNAME = {
     "tmc": "bi-cpu",
     "tmc4671": "bi-cpu",
     "tmcdebug": "bi-bug",
-    "pwm": "bi-sine-wave",
+    "pwm": "bi-soundwave",
     "midi": "bi-music-note-beamed",
     "analog": "bi-filter-circle",
     "encoder": "bi-disc",
@@ -61,6 +65,12 @@ ICON_BY_CLSNAME = {
     "profile": "bi-collection",
     "can": "bi-broadcast",
     "effects": "bi-lightning-charge",
+    "pcf": "bi-toggle-on",
+    "pcfbtn": "bi-toggle-on",
+    "ads": "bi-filter-circle",
+    "adsanalog": "bi-filter-circle",
+    "cananalog": "bi-broadcast",
+    "canbtn": "bi-broadcast",
 }
 
 LABEL_BY_CLSNAME = {
@@ -84,6 +94,12 @@ LABEL_BY_CLSNAME = {
     "profile": "Perfis",
     "can": "CAN Remote",
     "effects": "Efeitos",
+    "pcf": "PCF Buttons",
+    "pcfbtn": "PCF Buttons",
+    "ads": "ADS Analog",
+    "adsanalog": "ADS Analog",
+    "cananalog": "CAN Analog",
+    "canbtn": "CAN Buttons",
 }
 
 MENU_SECTIONS = [

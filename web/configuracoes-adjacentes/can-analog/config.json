@@ -1,0 +1,10 @@
+{
+  "id": "can-analog",
+  "title": "CAN Anal?gico",
+  "icon": "bi-broadcast",
+  "clsname_match": [
+    "cananalog"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

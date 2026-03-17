@@ -5,7 +5,8 @@
   padding: 16px;
   color: var(--text-primary);
   overflow-y: auto;
-  height: 100vh;
+  min-height: 100%;
+  height: 100%;
   box-sizing: border-box;
 }
 
@@ -97,4 +98,23 @@
 
 .hint-card {
   background: rgba(20, 30, 54, 0.6);
+}
+
+
+.curve-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.curve-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .curve-split {
+    grid-template-columns: 1fr;
+  }
 }

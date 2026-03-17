@@ -239,7 +239,7 @@ async function loadAin() {
       setTimeout(loadAin, RETRY_DELAY);
       return;
     }
-    if (hint) hint.textContent = "Sem resposta do firmware. Clique Atualizar para tentar novamente.";
+    if (hint) hint.textContent = "Sem resposta do firmware. Use o botao do cabe?alho se precisar recarregar.";
     stopPolling();
     return;
   }

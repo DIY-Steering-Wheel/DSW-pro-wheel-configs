@@ -359,10 +359,14 @@ body.theme-blue {
   display: none;
   flex-direction: column;
   gap: 24px;
+  height: 100%;
+  min-height: 100%;
 }
 
 .view-panel.active {
   display: flex;
+  height: 100%;
+  min-height: 100%;
 }
 
 .status-cards {
@@ -383,6 +387,9 @@ body.theme-blue {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .analysis-placeholder {
@@ -408,8 +415,10 @@ body.theme-blue {
 
 .card-body {
   padding: 16px;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   gap: 12px;
 }
 
@@ -991,7 +1000,7 @@ body.theme-blue {
 
 .adjacent-frame {
   width: 100%;
-  height: calc(100vh - 120px);
+  height: 100%;
   border: none;
   border-radius: 12px;
   background: rgba(12, 18, 34, 0.6);

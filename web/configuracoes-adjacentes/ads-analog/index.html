@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="style.css" />
+    <title>ADS Analog</title>
+  </head>
+  <body class="theme-blue">
+    <div class="adjacent-page">
+      <div class="adjacent-header">
+        <div>
+          <div class="adjacent-title">ADS Analog</div>
+          <div class="adjacent-subtitle">ADS111x + filtros de leitura</div>
+        </div>
+      </div>
+
+      <div class="adjacent-card">
+        <div class="form-grid">
+          <div class="form-field">
+            <label class="form-label" for="adsInputs">N?mero de entradas</label>
+            <input id="adsInputs" type="number" class="form-input-sm" min="1" max="4" />
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="adsGain">Gain</label>
+            <select id="adsGain" class="form-select-custom"></select>
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="adsRate">Samplerate</label>
+            <select id="adsRate" class="form-select-custom"></select>
+          </div>
+        </div>
+        <label class="toggle-switch">
+          <input id="adsDiff" type="checkbox" />
+          <span class="toggle-slider"></span>
+          <span>Modo diferencial</span>
+        </label>
+        <label class="toggle-switch">
+          <input id="adsI2cFast" type="checkbox" />
+          <span class="toggle-slider"></span>
+          <span>I2C 400kHz</span>
+        </label>
+        <div class="adjacent-hint">Em modo diferencial, usa apenas 2 canais.</div>
+      </div>
+
+      <div class="adjacent-card hint-card">
+        <div class="adjacent-row">
+          <div>
+            <div class="adjacent-label">Status</div>
+            <div class="adjacent-hint" id="adsHint">Pronto</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="index.js"></script>
+    <script src="../../js/track-changes.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "id": "ads-analog",
+  "title": "ADS Analog",
+  "icon": "bi-filter-circle",
+  "clsname_match": [
+    "adsanalog",
+    "ads"
+  ],
+  "show_when_connected": false,
+  "requires_active": true
+}

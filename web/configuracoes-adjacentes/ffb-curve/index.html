@@ -19,27 +19,28 @@
 
       <div class="tab-buttons" id="curveTabs"></div>
 
-      <div class="adjacent-card">
-        <div class="adjacent-label">Expo</div>
-        <div class="curve-controls">
-          <input id="curveSlider" type="range" min="-127" max="127" value="0" class="gain-slider" />
-          <div class="curve-values">
-            <div>
-              <div class="adjacent-label">Valor</div>
-              <div class="adjacent-value" id="curveValue">0</div>
-            </div>
-            <div>
-              <div class="adjacent-label">Expo</div>
-              <div class="adjacent-value" id="curveExpo">1.00</div>
+      <div class="adjacent-card curve-split">
+        <div class="curve-panel">
+          <div class="adjacent-label">Expo</div>
+          <div class="curve-controls">
+            <input id="curveSlider" type="range" min="-127" max="127" value="0" class="gain-slider" />
+            <div class="curve-values">
+              <div>
+                <div class="adjacent-label">Valor</div>
+                <div class="adjacent-value" id="curveValue">0</div>
+              </div>
+              <div>
+                <div class="adjacent-label">Expo</div>
+                <div class="adjacent-value" id="curveExpo">1.00</div>
+              </div>
             </div>
           </div>
+          <div class="curve-hint">Valores negativos suavizam o centro; positivos deixam a resposta mais agressiva.</div>
         </div>
-        <div class="curve-hint">Valores negativos suavizam o centro; positivos deixam a resposta mais agressiva.</div>
-      </div>
-
-      <div class="adjacent-card">
-        <div class="adjacent-label">Pr?via da curva</div>
-        <canvas id="curveCanvas" width="520" height="240"></canvas>
+        <div class="curve-panel">
+          <div class="adjacent-label">Pr?via da curva</div>
+          <canvas id="curveCanvas" width="520" height="220"></canvas>
+        </div>
       </div>
 
       <div class="adjacent-card hint-card">
@@ -48,7 +49,6 @@
             <div class="adjacent-label">Status</div>
             <div class="adjacent-hint" id="curveHint">Pronto</div>
           </div>
-          <button class="btn-primary-sm" id="curveRefresh" type="button">Atualizar</button>
         </div>
       </div>
     </div>
