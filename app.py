@@ -597,7 +597,7 @@ def main():
         
         width=1200,
         height=780,
-        min_size=(980, 620),
+        min_size=(1200, 620),
     )
     webview.start(debug=False)
 
