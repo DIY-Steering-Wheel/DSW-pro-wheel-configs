@@ -370,22 +370,27 @@ function setActiveView(viewKey, title) {
     if (config && typeof headerControls !== 'undefined') {
       console.log(`[setActiveView] Mostrando botões para: ${config.title}`);
       headerControls.showActionsFor(configId, config.title);
-      // Tenta carregar assim que abrir a configuração
+      // Only trigger initial load for iframes that haven't loaded yet.
+      // Subsequent visits are handled via configVisibility message.
       const loadIframe = document.querySelector(`[id="view-adjacent-${configId}"] iframe.adjacent-frame`);
-      const tryLoadConfig = () => {
-        if (!loadIframe?.contentWindow?.loadConfig) return;
-        Promise.resolve(loadIframe.contentWindow.loadConfig())
-          .then((result) => reportConfigResult("Tela carregada", result))
-          .catch((err) => {
-            console.error("[setActiveView] Erro ao carregar:", err);
-            setSaveStatus("Tela carregada com erros.");
-            addSystemLog(`Tela carregada com erros: ${err?.message || err}`, "error");
-          });
-      };
-      if (loadIframe?.contentWindow?.loadConfig) {
-        tryLoadConfig();
-      } else if (loadIframe) {
-        loadIframe.addEventListener("load", tryLoadConfig, { once: true });
+      if (loadIframe && !loadIframe.dataset.loaded) {
+        const tryLoadConfig = () => {
+          if (!loadIframe?.contentWindow?.loadConfig) return;
+          loadIframe.dataset.loaded = "1";
+          Promise.resolve(loadIframe.contentWindow.loadConfig())
+            .then((result) => reportConfigResult("Tela carregada", result))
+            .catch((err) => {
+              console.error("[setActiveView] Erro ao carregar:", err);
+              delete loadIframe.dataset.loaded;
+              setSaveStatus("Tela carregada com erros.");
+              addSystemLog(`Tela carregada com erros: ${err?.message || err}`, "error");
+            });
+        };
+        if (loadIframe.contentWindow?.loadConfig) {
+          tryLoadConfig();
+        } else {
+          loadIframe.addEventListener("load", tryLoadConfig, { once: true });
+        }
       }
 
       
@@ -880,6 +885,8 @@ function updateHardwareButtonsState(connected) {
   });
 }
 
+let monitoringInFlight = false;
+
 function startMonitoringPolling() {
   if (monitoringTimer) return;
   monitoringTimer = setInterval(async () => {
@@ -891,15 +898,23 @@ function startMonitoringPolling() {
     ) {
       return;
     }
-    const status = await window.pywebview.api.get_effects_status(monitoringAxis);
-    if (status?.ok) {
-      window.DswMonitoring?.updateStatus(status);
-    }
-    const live = await window.pywebview.api.get_effects_live_forces(monitoringAxis);
-    if (live?.ok) {
-      live.active_mask = status?.active_mask || 0;
-      live.effects = status?.effects || [];
-      window.DswMonitoring?.updateLive(live);
+    if (monitoringInFlight) return;
+    monitoringInFlight = true;
+    try {
+      const combined = await window.pywebview.api.get_effects_combined(monitoringAxis);
+      if (combined?.ok) {
+        window.DswMonitoring?.updateStatus(combined);
+        const live = {
+          ok: true,
+          forces: combined.forces || [],
+          effects: combined.force_effects || [],
+          active_mask: combined.active_mask || 0,
+        };
+        live.effects_detail = combined.effects || [];
+        window.DswMonitoring?.updateLive(live);
+      }
+    } finally {
+      monitoringInFlight = false;
     }
   }, 500);
 }
@@ -908,6 +923,7 @@ function stopMonitoringPolling() {
   if (!monitoringTimer) return;
   clearInterval(monitoringTimer);
   monitoringTimer = null;
+  monitoringInFlight = false;
 }
 
 function startFfbPolling() {
@@ -1082,13 +1098,12 @@ async function attemptAutoReconnect(port) {
         setSaveStatus("Reconectado com sucesso!");
         addSystemLog("Reconectado com sucesso.");
         updateStatus(result.status);
-        await loadCatalog();
-        await loadAdjacentConfigs();
-        await loadProfiles();
-        await loadClassDefinitions();
-        await loadActiveClasses();
-        await loadMainClasses();
-        await loadJoystickRates();
+        await Promise.all([
+          loadCatalog(),
+          loadAdjacentConfigs(),
+          loadProfiles(),
+          loadConnectData(),
+        ]);
         startConnectionCheck();
         return;
       }
@@ -2269,6 +2284,76 @@ async function loadJoystickRates() {
   renderJoystickRates(data);
 }
 
+/**
+ * Single mega-batch: loads active_classes + class_definitions + io_definitions + main_classes + joystick_rates
+ * in one serial round-trip (15 serial commands batched).
+ */
+async function loadConnectData() {
+  if (!window.pywebview?.api || !lastStatus?.connected) return;
+  const d = await window.pywebview.api.get_connect_data();
+  if (!d) return;
+
+  // --- active classes ---
+  activeClassIds = new Set();
+  activeClasses = [];
+  const active = d.active_classes;
+  if (active && active.length) {
+    activeClasses = active;
+    active.forEach((entry) => activeClassIds.add(entry.id));
+  }
+
+  // --- class definitions ---
+  const cd = d.class_definitions || {};
+  classDefinitions = {
+    driver: cd.driver || { current: null, classes: [] },
+    encoder: cd.encoder || { current: null, classes: [] },
+    shifter: cd.shifter || { current: null, modes: [] },
+  };
+  appliedClassDefinitions = {
+    driver: cd.driver || { current: null, classes: [] },
+    encoder: cd.encoder || { current: null, classes: [] },
+    shifter: cd.shifter || { current: null, modes: [] },
+  };
+
+  // --- io definitions ---
+  const io = d.io_definitions || {};
+  const ainList = parseLsList(io.lsain);
+  const dinList = parseLsList(io.lsbtn);
+  const ainEntry =
+    ainList.find((s) => s.id === 0) || ainList.find((s) => /ain|pins|analog/i.test(s.name || ""));
+  const dinEntry =
+    dinList.find((s) => s.id === 0) || dinList.find((s) => /d-pins|dpin|digital|din/i.test(s.name || ""));
+  const aMask = parseInt(io.aintypes, 10);
+  const bMask = parseInt(io.btntypes, 10);
+  ioDefinitions = {
+    ain: {
+      id: ainEntry?.id ?? null,
+      name: ainEntry?.name || "AIN-Pins",
+      active: ainEntry ? (Number.isNaN(aMask) ? false : (aMask & (1 << ainEntry.id)) !== 0) : false,
+      available: Boolean(ainEntry),
+      bitmask: Number.isNaN(aMask) ? 0 : aMask,
+    },
+    din: {
+      id: dinEntry?.id ?? null,
+      name: dinEntry?.name || "D-Pins",
+      active: dinEntry ? (Number.isNaN(bMask) ? false : (bMask & (1 << dinEntry.id)) !== 0) : false,
+      available: Boolean(dinEntry),
+      bitmask: Number.isNaN(bMask) ? 0 : bMask,
+    },
+  };
+
+  // --- main classes ---
+  renderMainClasses(d.main_classes || { current: null, classes: [] });
+
+  // --- joystick rates ---
+  renderJoystickRates(d.joystick_rates || { current: null, modes: [] });
+
+  // --- render ---
+  renderClasses();
+  renderCalibrationTree();
+  updateMonitoringLock(lastStatus?.connected);
+}
+
 async function connectSelected() {
   if (!selectedPort || !window.pywebview?.api) return;
   const result = await window.pywebview.api.connect(selectedPort);
@@ -2278,15 +2363,14 @@ async function connectSelected() {
     return;
   }
   reconnectAttempts = 0;
-  await loadCatalog();
-  await loadAdjacentConfigs();
+  // Non-serial loads run in parallel with the single mega-batch serial load
+  await Promise.all([
+    loadCatalog(),
+    loadAdjacentConfigs(),
+    loadProfiles(),
+    loadConnectData(),
+  ]);
   addSystemLog(`Adjacent configs carregados: ${adjacentConfigs.length} configs`);
-  await loadProfiles();
-  await loadClassDefinitions();
-  await loadActiveClasses();
-  await loadIoDefinitions();
-  await loadMainClasses();
-  await loadJoystickRates();
   renderClasses();
   startConnectionCheck();
 }
@@ -2332,10 +2416,12 @@ async function applyMainSettings() {
     }
     if (!Number.isNaN(classId) && classId !== mainClassData.current) {
       await window.pywebview.api.set_main_class(classId);
+      // Board reboots after main class change — wait before reading back
+      await new Promise((res) => setTimeout(res, 1500));
     }
+    await loadJoystickRates();
+    await loadMainClasses();
   });
-  await loadJoystickRates();
-  await loadMainClasses();
 }
 
 async function saveProfile() {
@@ -2423,22 +2509,88 @@ async function importProfile() {
   }
 }
 
+let applyClassInFlight = false;
+
 async function applyClassDefinitions() {
   if (!window.pywebview?.api || !lastStatus?.connected) return;
-  setSaveStatus("Aplicando definicoes de classes...");
-  const payload = {
-    driver: classDefinitions?.driver?.current ?? null,
-    encoder: classDefinitions?.encoder?.current ?? null,
-    shifter: classDefinitions?.shifter?.current ?? null,
-  };
-  const result = await withPollingPaused(() => window.pywebview.api.apply_class_definitions(payload));
-  if (result?.ok) {
-    setSaveStatus("Definicoes de classes aplicadas.");
-    await loadClassDefinitions();
-    await loadActiveClasses();
+  if (applyClassInFlight) {
+    console.warn("[DSW] applyClassDefinitions: already in progress, skipping");
     return;
   }
-  setSaveStatus("Falha ao enviar definicoes de classes.");
+  applyClassInFlight = true;
+  setSaveStatus("Aplicando definicoes de classes...");
+
+  try {
+    // Only send fields that actually changed vs what the board has applied
+    const applied = appliedClassDefinitions || {};
+    const payload = {};
+    let axisChanged = false;
+
+    const driverVal = classDefinitions?.driver?.current ?? null;
+    const encoderVal = classDefinitions?.encoder?.current ?? null;
+    const shifterVal = classDefinitions?.shifter?.current ?? null;
+
+    if (driverVal !== null && driverVal !== (applied?.driver?.current ?? null)) {
+      payload.driver = driverVal;
+      axisChanged = true;
+    }
+    if (encoderVal !== null && encoderVal !== (applied?.encoder?.current ?? null)) {
+      payload.encoder = encoderVal;
+      axisChanged = true;
+    }
+    if (shifterVal !== null && shifterVal !== (applied?.shifter?.current ?? null)) {
+      payload.shifter = shifterVal;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setSaveStatus("Nenhuma alteracao.");
+      return;
+    }
+
+    if (axisChanged) {
+      // Driver/encoder change reconfigures the axis — pause polling, wait, reload
+      const result = await withPollingPaused(async () => {
+        const r = await window.pywebview.api.apply_class_definitions(payload);
+        if (r?.ok) {
+          await new Promise((res) => setTimeout(res, 600));
+          await loadClassDefinitions();
+          await loadActiveClasses();
+        }
+        return r;
+      });
+      if (result?.ok) {
+        setSaveStatus("Definicoes de classes aplicadas.");
+        return;
+      }
+      setSaveStatus("Falha ao enviar definicoes de classes.");
+    } else {
+      // Pure shifter change — pause polling briefly to avoid board overload / backoff cascade
+      const result = await withPollingPaused(async () => {
+        const r = await window.pywebview.api.apply_class_definitions(payload);
+        if (r?.ok) {
+          await new Promise((res) => setTimeout(res, 200));
+        }
+        return r;
+      });
+      if (result?.ok) {
+        // Update local tracking immediately
+        appliedClassDefinitions = {
+          ...appliedClassDefinitions,
+          shifter: { ...(appliedClassDefinitions?.shifter || {}), current: shifterVal },
+        };
+        // Re-render sidebar so cambio tab appears/disappears based on new shifter state
+        renderCalibrationTree();
+        setSaveStatus("Modo do shifter aplicado.");
+      } else {
+        setSaveStatus("Falha ao enviar modo do shifter.");
+      }
+    }
+  } catch (err) {
+    console.error("[DSW] applyClassDefinitions error:", err);
+    setSaveStatus("Erro ao aplicar definicoes de classes.");
+  } finally {
+    applyClassInFlight = false;
+  }
 }
 
 function addTerminalLog(message, isError = false) {
@@ -2495,16 +2647,13 @@ async function refreshAll() {
     setSaveStatus("Carregando... 2");
     await loadStatus();
     setSaveStatus("Carregando... 3");
-    await loadCatalog();
-    setSaveStatus("Carregando... 4");
-    await loadAdjacentConfigs();
-    setSaveStatus("Carregando... 5");
-    await loadProfiles();
-    await loadClassDefinitions();
-    await loadActiveClasses();
-    await loadIoDefinitions();
-    await loadMainClasses();
-    await loadJoystickRates();
+    // Non-serial loads run in parallel with the single mega-batch serial load
+    await Promise.all([
+      loadCatalog(),
+      loadAdjacentConfigs(),
+      loadProfiles(),
+      loadConnectData(),
+    ]);
     setSaveStatus("Pronto");
     if (lastStatus?.connected) {
       startConnectionCheck();

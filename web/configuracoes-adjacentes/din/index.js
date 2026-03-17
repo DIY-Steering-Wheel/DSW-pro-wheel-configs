@@ -6,6 +6,7 @@ let valueTimer = null;
 let dinClassId = -1;       // DIN-Pins class id from main.lsbtn (usually 0)
 let dinTypesActive = false; // Whether DIN-Pins is active per main.btntypes
 let btntypesBitmask = 0;   // Stored for activation button
+let dinLoaded = false;     // True after first successful loadDin()
 
 function buildPinGrid(container, count, mask, pulseMask) {
   container.innerHTML = "";
@@ -187,6 +188,7 @@ async function loadDin() {
   if (invertEl) invertEl.checked = (parseInt(polReply, 10) || 0) > 0;
 
   if (hint) hint.textContent = `${dinCount} pinos`;
+  dinLoaded = true;
   startPolling();
 }
 
@@ -243,11 +245,25 @@ document.addEventListener("visibilitychange", () => {
 // Parent signals visibility when user switches adjacent config views
 window.addEventListener("message", (e) => {
   if (e.data?.type === "configVisibility") {
-    if (e.data.visible && dinCount > 0) startPolling();
-    else stopPolling();
+    if (e.data.visible) {
+      if (dinLoaded && dinCount > 0) {
+        startPolling();
+      } else {
+        loadDin();
+      }
+    } else {
+      stopPolling();
+    }
   }
 });
 
+function refreshDin() {
+  loadRetries = 0;
+  dinLoaded = false;
+  loadDin();
+}
+
 // API expected by the parent header controls
-window.loadConfig = loadDin;
+// loadConfig is only called for explicit refresh (header button)
+window.loadConfig = refreshDin;
 window.applyConfig = applyDin;

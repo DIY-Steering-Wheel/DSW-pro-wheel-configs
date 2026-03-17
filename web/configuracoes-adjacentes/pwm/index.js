@@ -37,11 +37,13 @@ async function loadPwm() {
     return;
   }
 
-  const freqList = await api.serial_request("pwmdrv", "freq", 0, null, "!");
-  const freqCurrent = await api.serial_request("pwmdrv", "freq", 0, null, "?");
-  const modeList = await api.serial_request("pwmdrv", "mode", 0, null, "!");
-  const modeCurrent = await api.serial_request("pwmdrv", "mode", 0, null, "?");
-  const dirReply = await api.serial_request("pwmdrv", "dir", 0, null, "?");
+  const [freqList, freqCurrent, modeList, modeCurrent, dirReply] = await api.serial_request_many([
+    { cls: "pwmdrv", cmd: "freq", instance: 0, typechar: "!" },
+    { cls: "pwmdrv", cmd: "freq", instance: 0, typechar: "?" },
+    { cls: "pwmdrv", cmd: "mode", instance: 0, typechar: "!" },
+    { cls: "pwmdrv", cmd: "mode", instance: 0, typechar: "?" },
+    { cls: "pwmdrv", cmd: "dir", instance: 0, typechar: "?" },
+  ]);
 
   const freqs = parseList(freqList);
   const modes = parseList(modeList);

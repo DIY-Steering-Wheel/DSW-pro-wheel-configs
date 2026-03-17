@@ -36,9 +36,10 @@ class SerialBackend:
         self._disconnect_event = threading.Event()
         self._reader: Optional[threading.Thread] = None
         self._running = False
-        self._buffer = ""
+        self._buffer = bytearray()
         self._callbacks: List[Dict] = []
         self._last_port_info: Optional[Dict] = None
+        self._backoff_until: float = 0.0
 
     def list_ports(self) -> List[Dict]:
         ports = []
@@ -74,9 +75,10 @@ class SerialBackend:
                 self._request_lock = threading.Lock()
             self._disconnect_event.clear()
             self._callbacks.clear()
-            self._buffer = ""
+            self._buffer = bytearray()
+            self._backoff_until = 0.0
             try:
-                self._serial = serial.Serial(port=port_name, baudrate=115200, timeout=0.1)
+                self._serial = serial.Serial(port=port_name, baudrate=115200, timeout=0.05)
                 self._serial.dtr = True
                 self._running = True
                 self._reader = threading.Thread(target=self._read_loop, daemon=True)
@@ -102,7 +104,7 @@ class SerialBackend:
                 finally:
                     self._serial = None
                     self._callbacks.clear()
-                    self._buffer = ""
+                    self._buffer = bytearray()
                     SERIAL_LOG.info("DISCONNECT %s", port)
 
     def is_connected(self) -> bool:
@@ -113,25 +115,33 @@ class SerialBackend:
 
         If the request lock is held by another operation we treat that as
         proof that the board is still communicating and return True.
+        Bypasses backoff so it can probe and reset it on success.
         """
         if not self.is_connected():
             return False
         # Fast path: if another request is in progress, serial is active.
-        # Wait briefly in case a request is just finishing.
-        if not self._request_lock.acquire(timeout=2.0):
-            # Lock held for 2s+ means something is actively using serial
+        if not self._request_lock.acquire(timeout=0.3):
             return True
         self._request_lock.release()
-        # Actually ping the board with a short timeout
-        reply = self.request("main", "id", timeout=2.0)
-        return reply is not None
+        # Temporarily disable backoff so the probe goes through
+        saved_backoff = self._backoff_until
+        self._backoff_until = 0.0
+        reply = self.request("main", "id", timeout=1.0)
+        if reply is not None:
+            # Board responded — clear backoff
+            self._backoff_until = 0.0
+            return True
+        else:
+            # Restore (or extend) backoff
+            self._backoff_until = max(saved_backoff, time.monotonic() + 2.0)
+            return False
 
     def send_raw(self, payload: str) -> None:
         if not self.is_connected():
             return
+        data = payload.encode("utf-8")
         with self._lock:
-            SERIAL_LOG.info("TX %s", payload.strip())
-            self._serial.write(payload.encode("utf-8"))
+            self._serial.write(data)
 
     def request(
         self,
@@ -140,12 +150,17 @@ class SerialBackend:
         instance: int = 0,
         adr: Optional[int] = None,
         typechar: str = "?",
-        timeout: float = 1.5,
+        timeout: float = 0.8,
     ) -> Optional[str]:
         if not self.is_connected():
             return None
 
-        if not self._request_lock.acquire(timeout=timeout):
+        # Skip if board is in backoff cooldown
+        if time.monotonic() < self._backoff_until:
+            return None
+
+        lock_timeout = min(timeout, 0.5)
+        if not self._request_lock.acquire(timeout=lock_timeout):
             SERIAL_LOG.error("REQ_LOCK_TIMEOUT %s.%s", cls, cmd)
             return None
 
@@ -177,22 +192,30 @@ class SerialBackend:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                evt.wait(min(remaining, 0.5))
+                evt.wait(min(remaining, 0.1))
             if not evt.is_set() and cb in self._callbacks:
                 self._callbacks.remove(cb)
                 if not self._disconnect_event.is_set():
                     SERIAL_LOG.error("TIMEOUT %s.%s", cls, cmd)
+                    self._backoff_until = time.monotonic() + 2.0
+            else:
+                self._backoff_until = 0.0
             return result["value"]
         finally:
             self._request_lock.release()
 
-    def request_many(self, requests: List[Dict], timeout: float = 1.8) -> List[Optional[str]]:
+    def request_many(self, requests: List[Dict], timeout: float = 1.2) -> List[Optional[str]]:
         if not self.is_connected():
             return [None for _ in requests]
         if not requests:
             return []
 
-        if not self._request_lock.acquire(timeout=timeout):
+        # Skip if board is in backoff cooldown
+        if time.monotonic() < self._backoff_until:
+            return [None for _ in requests]
+
+        lock_timeout = min(timeout, 0.5)
+        if not self._request_lock.acquire(timeout=lock_timeout):
             SERIAL_LOG.error("REQ_MANY_LOCK_TIMEOUT")
             return [None for _ in requests]
 
@@ -241,12 +264,19 @@ class SerialBackend:
                 if remaining <= 0:
                     break
                 shared_evt.clear()
-                shared_evt.wait(min(remaining, 0.5))
+                shared_evt.wait(min(remaining, 0.1))
         finally:
             for cb in callbacks:
                 if cb in self._callbacks:
                     self._callbacks.remove(cb)
             self._request_lock.release()
+
+        replied = sum(1 for e in events if e.is_set())
+        if replied == 0 and len(requests) > 0:
+            self._backoff_until = time.monotonic() + 2.0
+            SERIAL_LOG.warning("Board unresponsive (%d cmds), backoff 2s", len(requests))
+        elif replied == len(events):
+            self._backoff_until = 0.0
 
         return results
 
@@ -304,8 +334,11 @@ class SerialBackend:
     def get_main_classes(self) -> Dict:
         if not self.is_connected():
             return {"current": None, "classes": []}
-        main_id = self.request("main", "id")
-        lsmain = self.request("sys", "lsmain")
+        replies = self.request_many([
+            {"cls": "main", "cmd": "id", "typechar": "?"},
+            {"cls": "sys", "cmd": "lsmain", "typechar": "?"},
+        ])
+        main_id, lsmain = replies
         classes = []
         if lsmain:
             for line in lsmain.split("\n"):
@@ -451,7 +484,7 @@ class SerialBackend:
         replies = self.request_many([
             {"cls": "fx", "cmd": "effectsDetails", "adr": axis, "typechar": "?"},
             {"cls": "fx", "cmd": "effects", "typechar": "?"},
-        ], timeout=2.5)
+        ], timeout=1.5)
         details, active = replies
         effects: List[Dict] = []
         if details:
@@ -468,7 +501,7 @@ class SerialBackend:
     def get_effects_live_forces(self, axis: int = 0) -> Dict:
         if not self.is_connected():
             return {"ok": False, "forces": [], "effects": []}
-        data = self.request("fx", "effectsForces", adr=axis, typechar="?", timeout=2.5)
+        data = self.request("fx", "effectsForces", adr=axis, typechar="?", timeout=1.5)
         forces: List[int] = []
         effects: List[int] = []
         if data:
@@ -485,6 +518,42 @@ class SerialBackend:
                     continue
         return {"ok": True, "forces": forces, "effects": effects}
 
+    def get_effects_combined(self, axis: int = 0) -> Dict:
+        """Fetch effects status + live forces in a single lock acquisition."""
+        if not self.is_connected():
+            return {"ok": False, "effects": [], "active_mask": 0, "forces": [], "force_effects": []}
+        replies = self.request_many([
+            {"cls": "fx", "cmd": "effectsDetails", "adr": axis, "typechar": "?"},
+            {"cls": "fx", "cmd": "effects", "typechar": "?"},
+            {"cls": "fx", "cmd": "effectsForces", "adr": axis, "typechar": "?"},
+        ], timeout=1.5)
+        details, active, forces_data = replies
+        effects: List[Dict] = []
+        if details:
+            try:
+                effects = json.loads("[" + details + "]")
+            except json.JSONDecodeError:
+                effects = []
+        try:
+            active_mask = int(active) if active is not None else 0
+        except ValueError:
+            active_mask = 0
+        forces: List[int] = []
+        force_effects: List[int] = []
+        if forces_data:
+            for line in forces_data.split("\n"):
+                if not line:
+                    continue
+                parts = line.split(":")
+                if len(parts) < 2:
+                    continue
+                try:
+                    forces.append(int(parts[0]))
+                    force_effects.append(int(parts[1]))
+                except ValueError:
+                    continue
+        return {"ok": True, "effects": effects, "active_mask": active_mask, "forces": forces, "force_effects": force_effects}
+
     def get_ffb_status(self) -> Dict:
         if not self.is_connected():
             return {"ok": False, "active": False, "rate": 0, "cfrate": 0}
@@ -492,7 +561,7 @@ class SerialBackend:
             {"cls": "main", "cmd": "hidrate", "typechar": "?"},
             {"cls": "main", "cmd": "cfrate", "typechar": "?"},
             {"cls": "main", "cmd": "ffbactive", "typechar": "?"},
-        ], timeout=2.0)
+        ], timeout=1.5)
         rate, cfrate, active = replies
         try:
             rate_val = int(rate) if rate is not None else 0
@@ -541,6 +610,134 @@ class SerialBackend:
             current = None
         return {"current": current, "modes": self._parse_modes_list(modes_reply)}
 
+    def get_connect_data(self, axis: int = 0) -> Dict:
+        """Single mega-batch: active_classes + class_definitions + io_definitions + main_classes + joystick_rates."""
+        if not self.is_connected():
+            return {
+                "active_classes": [],
+                "class_definitions": {
+                    "driver": {"current": None, "classes": []},
+                    "encoder": {"current": None, "classes": []},
+                    "shifter": {"current": None, "modes": []},
+                },
+                "io_definitions": {
+                    "lsain": None, "aintypes": None,
+                    "lsbtn": None, "btntypes": None,
+                },
+                "main_classes": {"current": None, "classes": []},
+                "joystick_rates": {"current": None, "modes": []},
+            }
+
+        replies = self.request_many([
+            # 0: active_classes
+            {"cls": "sys", "cmd": "lsactive", "typechar": "?"},
+            # 1-6: class_definitions
+            {"cls": "axis", "cmd": "drvtype", "instance": axis, "typechar": "!"},
+            {"cls": "axis", "cmd": "drvtype", "instance": axis, "typechar": "?"},
+            {"cls": "axis", "cmd": "enctype", "instance": axis, "typechar": "!"},
+            {"cls": "axis", "cmd": "enctype", "instance": axis, "typechar": "?"},
+            {"cls": "shifter", "cmd": "mode", "instance": 0, "typechar": "!"},
+            {"cls": "shifter", "cmd": "mode", "instance": 0, "typechar": "?"},
+            # 7-10: io_definitions
+            {"cls": "main", "cmd": "lsain", "instance": 0, "typechar": "?"},
+            {"cls": "main", "cmd": "aintypes", "instance": 0, "typechar": "?"},
+            {"cls": "main", "cmd": "lsbtn", "instance": 0, "typechar": "?"},
+            {"cls": "main", "cmd": "btntypes", "instance": 0, "typechar": "?"},
+            # 11-12: main_classes
+            {"cls": "main", "cmd": "id", "typechar": "?"},
+            {"cls": "sys", "cmd": "lsmain", "typechar": "?"},
+            # 13-14: joystick_rates
+            {"cls": "main", "cmd": "hidsendspd", "typechar": "!"},
+            {"cls": "main", "cmd": "hidsendspd", "typechar": "?"},
+        ], timeout=2.0)
+
+        (lsactive_raw,
+         driver_list, driver_current, encoder_list, encoder_current, shifter_list, shifter_current,
+         lsain, aintypes, lsbtn, btntypes,
+         main_id, lsmain,
+         rate_modes_reply, rate_current_reply) = replies
+
+        # --- active_classes ---
+        SERIAL_LOG.info("lsactive raw: %r", lsactive_raw)
+        active_classes = build_tabs_from_lsactive(lsactive_raw) if lsactive_raw else []
+        SERIAL_LOG.info("lsactive parsed %d tabs", len(active_classes))
+
+        # --- class_definitions ---
+        def _to_int(value):
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except ValueError:
+                return None
+
+        def _resolve_current(raw, classes):
+            current = _to_int(raw)
+            if current is not None:
+                return current
+            if not raw or not classes:
+                return None
+            raw_norm = str(raw).strip().lower()
+            for entry in classes:
+                name = str(entry.get("name") or "").strip().lower()
+                if name and raw_norm == name:
+                    return entry.get("id")
+            for entry in classes:
+                name = str(entry.get("name") or "").strip().lower()
+                if name and (raw_norm in name or name in raw_norm):
+                    return entry.get("id")
+            return None
+
+        driver_classes = self._parse_class_list(driver_list)
+        encoder_classes = self._parse_class_list(encoder_list)
+        class_definitions = {
+            "driver": {"current": _resolve_current(driver_current, driver_classes), "classes": driver_classes},
+            "encoder": {"current": _resolve_current(encoder_current, encoder_classes), "classes": encoder_classes},
+            "shifter": {"current": _to_int(shifter_current), "modes": self._parse_shifter_modes(shifter_list)},
+        }
+
+        # --- io_definitions (raw strings, parsed in JS) ---
+        io_definitions = {
+            "lsain": lsain, "aintypes": aintypes,
+            "lsbtn": lsbtn, "btntypes": btntypes,
+        }
+
+        # --- main_classes ---
+        classes = []
+        if lsmain:
+            for line in lsmain.split("\n"):
+                if not line:
+                    continue
+                parts = line.split(":", 2)
+                if len(parts) < 3:
+                    continue
+                class_id_str, creatable, name = parts
+                try:
+                    cid = int(class_id_str)
+                except ValueError:
+                    continue
+                classes.append({"id": cid, "name": name, "creatable": creatable != "0"})
+        try:
+            main_current = int(main_id) if main_id is not None else None
+        except ValueError:
+            main_current = None
+        main_classes = {"current": main_current, "classes": classes}
+
+        # --- joystick_rates ---
+        try:
+            rate_current = int(rate_current_reply) if rate_current_reply is not None else None
+        except ValueError:
+            rate_current = None
+        joystick_rates = {"current": rate_current, "modes": self._parse_modes_list(rate_modes_reply)}
+
+        return {
+            "active_classes": active_classes,
+            "class_definitions": class_definitions,
+            "io_definitions": io_definitions,
+            "main_classes": main_classes,
+            "joystick_rates": joystick_rates,
+        }
+
     def set_joystick_rate(self, rate_id: int) -> bool:
         if not self.is_connected():
             return False
@@ -554,12 +751,15 @@ class SerialBackend:
         encoder_id = payload.get("encoder")
         shifter_mode = payload.get("shifter")
 
+        items = []
         if driver_id is not None:
-            self.send_value("axis", "drvtype", value=int(driver_id), instance=axis)
+            items.append({"cls": "axis", "cmd": "drvtype", "value": int(driver_id), "instance": axis})
         if encoder_id is not None:
-            self.send_value("axis", "enctype", value=int(encoder_id), instance=axis)
+            items.append({"cls": "axis", "cmd": "enctype", "value": int(encoder_id), "instance": axis})
         if shifter_mode is not None:
-            self.send_value("shifter", "mode", value=int(shifter_mode), instance=0)
+            items.append({"cls": "shifter", "cmd": "mode", "value": int(shifter_mode), "instance": 0})
+        if items:
+            self.send_values_batch(items)
         return True
 
     def set_main_class(self, class_id: int) -> bool:
@@ -585,12 +785,15 @@ class SerialBackend:
     def save_to_flash(self) -> bool:
         if not self.is_connected():
             return False
+        # Save is user-initiated and must always go through — reset backoff
+        self._backoff_until = 0.0
         # Wait briefly for any in-flight requests to finish
         time.sleep(0.15)
         reply = self.request("sys", "save", timeout=5.0)
         if reply is None:
             SERIAL_LOG.warning("SAVE_TO_FLASH first attempt failed, retrying...")
-            time.sleep(0.3)
+            self._backoff_until = 0.0
+            time.sleep(0.5)
             reply = self.request("sys", "save", timeout=5.0)
         SERIAL_LOG.info("SAVE_TO_FLASH result: %s", reply)
         return reply is not None
@@ -622,51 +825,55 @@ class SerialBackend:
         return entry
 
     def _dispatch(self, parsed) -> None:
+        cls_cmd = (parsed.cls, parsed.cmd)
         to_remove = []
         for cb in self._callbacks:
-            if cb["cls"] != parsed.cls:
-                continue
-            if cb["cmd"] != parsed.cmd:
+            if (cb["cls"], cb["cmd"]) != cls_cmd:
                 continue
             if cb["instance"] not in (parsed.instance, 0xFF):
                 continue
-            if cb["typechar"] not in (parsed.typechar, None):
+            tc = cb["typechar"]
+            if tc is not None and tc != parsed.typechar:
                 continue
             if cb["address"] is not None and cb["address"] != parsed.address:
                 continue
             cb["callback"](parsed.reply)
             to_remove.append(cb)
-        for cb in to_remove:
-            if cb in self._callbacks:
-                self._callbacks.remove(cb)
+        if to_remove:
+            cbs = self._callbacks
+            for cb in to_remove:
+                try:
+                    cbs.remove(cb)
+                except ValueError:
+                    pass
 
     def _read_loop(self) -> None:
+        buf = self._buffer
         while self._running and self._serial:
             try:
-                chunk = self._serial.read(512)
+                waiting = self._serial.in_waiting
+                if waiting > 0:
+                    chunk = self._serial.read(waiting)
+                else:
+                    chunk = self._serial.read(1)
             except serial.SerialException:
                 SERIAL_LOG.error("READ_ERROR")
                 self.disconnect()
                 return
             if not chunk:
-                time.sleep(0.01)
                 continue
-            try:
-                self._buffer += chunk.decode("utf-8", errors="ignore")
-            except UnicodeDecodeError:
-                continue
+            buf.extend(chunk)
 
             while True:
-                end = self._buffer.find("]")
+                end = buf.find(b"]")
                 if end == -1:
                     break
-                start = self._buffer.find("[")
+                start = buf.find(b"[")
                 if start == -1 or start > end:
-                    self._buffer = self._buffer[end + 1 :]
+                    del buf[:end + 1]
                     continue
-                frame = self._buffer[start : end + 1]
-                self._buffer = self._buffer[end + 1 :]
-                SERIAL_LOG.info("RX %s", frame.strip())
+                frame = buf[start:end + 1].decode("utf-8", errors="ignore")
+                del buf[:end + 1]
                 parsed = parse_reply(frame)
                 if parsed:
                     self._dispatch(parsed)

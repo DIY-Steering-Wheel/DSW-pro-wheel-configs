@@ -129,14 +129,14 @@
           "cls": "fx",
           "instance": 0,
           "cmd": "filterCfQ",
-          "value": "127"
+          "value": "70"
         },
         {
           "fullname": "Effects",
           "cls": "fx",
           "instance": 0,
           "cmd": "spring",
-          "value": "134"
+          "value": "64"
         },
         {
           "fullname": "Effects",
@@ -157,7 +157,7 @@
           "cls": "fx",
           "instance": 0,
           "cmd": "inertia",
-          "value": "184"
+          "value": "127"
         },
         {
           "fullname": "Axis",

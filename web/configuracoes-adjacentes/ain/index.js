@@ -8,6 +8,7 @@ let limitsData = []; // [{min, max, rawVal}] per enabled channel index
 let ainClassId = -1;       // AIN-Pins class id from main.lsain (usually 0)
 let ainTypesActive = false; // Whether AIN-Pins is active per main.aintypes
 let aintypesBitmask = 0;   // Stored for activation button
+let ainLoaded = false;     // True after first successful loadAin()
 
 /* ── Channel grid (checkboxes + progress bars) ── */
 
@@ -346,6 +347,7 @@ async function loadAin() {
 
   if (countEl) countEl.textContent = `${enabledChannels} de ${ainCount} canais ativos`;
   if (hint) hint.textContent = `${ainCount} canais`;
+  ainLoaded = true;
   startPolling();
 }
 
@@ -397,6 +399,7 @@ async function applyAin() {
 
 function refreshAin() {
   loadRetries = 0;
+  ainLoaded = false;
   loadAin();
 }
 
@@ -432,11 +435,19 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("message", (e) => {
   if (e.data?.type === "configVisibility") {
-    if (e.data.visible && ainCount > 0) startPolling();
-    else stopPolling();
+    if (e.data.visible) {
+      if (ainLoaded && ainCount > 0) {
+        startPolling();
+      } else {
+        loadAin();
+      }
+    } else {
+      stopPolling();
+    }
   }
 });
 
 // API expected by the parent header controls
-window.loadConfig = loadAin;
+// loadConfig is only called for explicit refresh (header button)
+window.loadConfig = refreshAin;
 window.applyConfig = applyAin;

@@ -247,6 +247,10 @@ class Api:
     def get_class_definitions(self) -> Dict:
         return self._serial.get_class_definitions()
 
+    def get_connect_data(self) -> Dict:
+        """Single mega-batch for connect: active + classDefs + ioDefs + main + rates."""
+        return self._serial.get_connect_data()
+
     def apply_class_definitions(self, payload: Dict) -> Dict:
         return {"ok": self._serial.apply_class_definitions(payload)}
 
@@ -255,6 +259,10 @@ class Api:
 
     def get_effects_live_forces(self, axis: int = 0) -> Dict:
         return self._serial.get_effects_live_forces(axis=axis)
+
+    def get_effects_combined(self, axis: int = 0) -> Dict:
+        """Single call for monitoring: effects status + live forces."""
+        return self._serial.get_effects_combined(axis=axis)
 
     def get_ffb_status(self) -> Dict:
         return self._serial.get_ffb_status()
@@ -446,7 +454,7 @@ class Api:
         instance: int = 0,
         adr: Optional[int] = None,
         typechar: str = "?",
-        timeout: float = 1.5,
+        timeout: float = 0.8,
     ) -> str:
         if not self._serial.is_connected():
             return ""

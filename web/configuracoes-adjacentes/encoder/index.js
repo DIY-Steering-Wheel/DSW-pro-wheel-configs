@@ -70,18 +70,22 @@ async function loadEncoderSettings(id) {
   showPanel(id);
 
   if (id === 2) {
-    const cpr = await api.serial_request("localenc", "cpr", 0, null, "?");
-    const idx = await api.serial_request("localenc", "index", 0, null, "?");
+    const [cpr, idx] = await api.serial_request_many([
+      { cls: "localenc", cmd: "cpr", instance: 0, typechar: "?" },
+      { cls: "localenc", cmd: "index", instance: 0, typechar: "?" },
+    ]);
     const cprEl = document.getElementById("localCpr");
     const idxEl = document.getElementById("localIndex");
     if (cprEl) cprEl.value = parseInt(cpr, 10) || 0;
     if (idxEl) idxEl.checked = (parseInt(idx, 10) || 0) > 0;
   } else if (id === 4) {
-    const modeList = await api.serial_request("mtenc", "mode", 0, null, "!");
-    const modeCur = await api.serial_request("mtenc", "mode", 0, null, "?");
-    const speedList = await api.serial_request("mtenc", "speed", 0, null, "!");
-    const speedCur = await api.serial_request("mtenc", "speed", 0, null, "?");
-    const cs = await api.serial_request("mtenc", "cs", 0, null, "?");
+    const [modeList, modeCur, speedList, speedCur, cs] = await api.serial_request_many([
+      { cls: "mtenc", cmd: "mode", instance: 0, typechar: "!" },
+      { cls: "mtenc", cmd: "mode", instance: 0, typechar: "?" },
+      { cls: "mtenc", cmd: "speed", instance: 0, typechar: "!" },
+      { cls: "mtenc", cmd: "speed", instance: 0, typechar: "?" },
+      { cls: "mtenc", cmd: "cs", instance: 0, typechar: "?" },
+    ]);
     const modes = parseList(modeList);
     const speeds = parseList(speedList).map((s) => ({
       ...s,
@@ -92,18 +96,22 @@ async function loadEncoderSettings(id) {
     const csEl = document.getElementById("mtCs");
     if (csEl) csEl.value = parseInt(cs, 10) || 1;
   } else if (id === 5) {
-    const bits = await api.serial_request("bissenc", "bits", 0, null, "?");
-    const dir = await api.serial_request("bissenc", "dir", 0, null, "?");
+    const [bits, dir] = await api.serial_request_many([
+      { cls: "bissenc", cmd: "bits", instance: 0, typechar: "?" },
+      { cls: "bissenc", cmd: "dir", instance: 0, typechar: "?" },
+    ]);
     const bitsEl = document.getElementById("bissBits");
     const dirEl = document.getElementById("bissDir");
     if (bitsEl) bitsEl.value = parseInt(bits, 10) || 1;
     if (dirEl) dirEl.checked = (parseInt(dir, 10) || 0) > 0;
   } else if (id === 6) {
-    const bits = await api.serial_request("ssienc", "bits", 0, null, "?");
-    const modeList = await api.serial_request("ssienc", "mode", 0, null, "!");
-    const modeCur = await api.serial_request("ssienc", "mode", 0, null, "?");
-    const speedList = await api.serial_request("ssienc", "speed", 0, null, "!");
-    const speedCur = await api.serial_request("ssienc", "speed", 0, null, "?");
+    const [bits, modeList, modeCur, speedList, speedCur] = await api.serial_request_many([
+      { cls: "ssienc", cmd: "bits", instance: 0, typechar: "?" },
+      { cls: "ssienc", cmd: "mode", instance: 0, typechar: "!" },
+      { cls: "ssienc", cmd: "mode", instance: 0, typechar: "?" },
+      { cls: "ssienc", cmd: "speed", instance: 0, typechar: "!" },
+      { cls: "ssienc", cmd: "speed", instance: 0, typechar: "?" },
+    ]);
     const bitsEl = document.getElementById("ssiBits");
     if (bitsEl) bitsEl.value = parseInt(bits, 10) || 1;
     fillSelect(document.getElementById("ssiMode"), parseList(modeList), parseInt(modeCur, 10));
