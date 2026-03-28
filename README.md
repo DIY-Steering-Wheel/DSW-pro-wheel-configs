@@ -27,5 +27,16 @@ python -m pip install pywebview pyserial pyusb intelhex
 python app.py
 ```
 
+## Preview do design (sem abrir app.py)
+Para validar apenas o layout HTML/CSS no navegador:
+```
+python -m http.server 5500
+```
+Depois abra:
+```
+http://localhost:5500/web/index.html
+```
+Use `Ctrl+F5` para forcar recarregamento ao editar o CSS.
+
 ## Notas
 - Para DFU funcionar, pode ser necessario driver WinUSB/DFU instalado.

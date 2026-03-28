@@ -2391,8 +2391,163 @@ body.modal-open {
   color: var(--text-muted);
 }
 
+/* ===== LEGACY-INSPIRED THEME (OLD UI DNA) ===== */
+:root {
+  --bg-primary: #0d1015;
+  --bg-secondary: #121720;
+  --bg-tertiary: #161c27;
+  --bg-card: #1a2230;
+  --accent: #8ab4f7;
+  --accent-soft: rgba(138, 180, 247, 0.14);
+  --accent-strong: #79a6f2;
+  --success: #7de2ad;
+  --info: #8ab4f7;
+  --danger: #f08b8b;
+  --border: rgba(146, 165, 196, 0.28);
+  --text-primary: #f3f6fb;
+  --text-secondary: #d2dbe8;
+  --text-muted: #9ca9bd;
+}
+
+body.theme-blue {
+  background: linear-gradient(180deg, #0d1015 0%, #111722 60%, #161c27 100%);
+}
+
+.sidebar {
+  background: #0f141d;
+  border-right: 1px solid rgba(146, 165, 196, 0.32);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+.sidebar-brand {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin-bottom: 14px;
+  padding: 8px 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(16, 23, 35, 0.98) 0%, rgba(16, 23, 35, 0.9) 100%);
+  border: 1px solid rgba(146, 165, 196, 0.22);
+}
+
+.brand-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  background: rgba(138, 180, 247, 0.1);
+  border: 1px solid rgba(138, 180, 247, 0.35);
+}
+
+.brand-logo img {
+  width: 26px;
+  height: 26px;
+}
+
+.brand-title {
+  font-size: 17px;
+  letter-spacing: 0.2px;
+}
+
+.brand-subtitle {
+  color: #c5d2e8;
+  letter-spacing: 1.2px;
+}
+
+.topbar,
+.app-footer {
+  background: rgba(16, 22, 32, 0.78);
+  border-color: rgba(146, 165, 196, 0.28);
+}
+
+.status-card,
+.analysis-card,
+.class-item,
+.firmware-panel,
+.logs-list,
+.errors-table {
+  background: linear-gradient(180deg, rgba(20, 28, 41, 0.78) 0%, rgba(17, 24, 36, 0.86) 100%);
+  border: 1px solid rgba(146, 165, 196, 0.28);
+  border-radius: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.sidebar-section {
+  border: 1px solid rgba(146, 165, 196, 0.22);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(17, 24, 36, 0.55);
+}
+
+.section-header {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid rgba(146, 165, 196, 0.25);
+  color: #b7c4da;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.section-title {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(146, 165, 196, 0.2);
+}
+
+.tree-item {
+  border-radius: 6px;
+}
+
+.tree-item:hover {
+  background: rgba(138, 180, 247, 0.12);
+  border-color: rgba(138, 180, 247, 0.3);
+}
+
+.tree-item.active {
+  background: rgba(138, 180, 247, 0.18);
+  border-color: rgba(138, 180, 247, 0.48);
+  color: #f2f6ff;
+}
+
+.tree-children {
+  border-left-color: rgba(146, 165, 196, 0.28);
+}
+
+.btn-primary-sm {
+  color: #0d1520;
+  background: #8ab4f7;
+}
+
+.btn-primary-sm:hover {
+  background: #79a6f2;
+}
+
+.btn-outline,
+.btn-ghost,
+.topbar-link,
+.hw-btn,
+.sidebar-link-btn {
+  border-color: rgba(146, 165, 196, 0.3);
+  background: rgba(19, 26, 38, 0.64);
+}
+
+.btn-outline:hover,
+.btn-ghost:hover,
+.topbar-link:hover,
+.sidebar-link-btn:hover {
+  border-color: rgba(138, 180, 247, 0.58);
+  color: #eaf1ff;
+  background: rgba(138, 180, 247, 0.14);
+}
+
+.footer-action-buttons .hw-btn {
+  border-radius: 7px;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
+  .sidebar-brand {
+    position: static;
+  }
+
   .app-layout {
     grid-template-columns: 1fr;
   }

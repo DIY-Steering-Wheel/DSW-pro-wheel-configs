@@ -44,6 +44,12 @@ class LocalButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
 
         self.btn_mask=0
         self.momentary_mask=0
+        self.num = 0
+        self.visible_num = 0
+        self.matrix_rows = 1
+        self.matrix_cols = 1
+        self.syncing_mode = False
+        self.has_mode_cmd = False
         self.prefix=0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.updateTimer)
@@ -52,6 +58,29 @@ class LocalButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
         vbox = QVBoxLayout()
         self.polBox = QCheckBox("Invert")
         vbox.addWidget(self.polBox)
+
+        matrixLayout = QHBoxLayout()
+        self.matrixViewBox = QCheckBox("Matrix view")
+        self.matrixViewBox.toggled.connect(self.matrixModeChanged)
+        matrixLayout.addWidget(self.matrixViewBox)
+        matrixLayout.addWidget(QLabel("Rows"))
+        self.rowsBox = QSpinBox()
+        self.rowsBox.setMinimum(1)
+        self.rowsBox.setMaximum(64)
+        self.rowsBox.valueChanged.connect(self.matrixLayoutChanged)
+        matrixLayout.addWidget(self.rowsBox)
+        matrixLayout.addWidget(QLabel("Cols"))
+        self.colsBox = QSpinBox()
+        self.colsBox.setMinimum(1)
+        self.colsBox.setMaximum(64)
+        self.colsBox.valueChanged.connect(self.matrixLayoutChanged)
+        matrixLayout.addWidget(self.colsBox)
+        vbox.addLayout(matrixLayout)
+
+        self.layoutInfo = QLabel("Layout only affects how buttons are shown in configurator.")
+        self.layoutInfo.setWordWrap(True)
+        vbox.addWidget(self.layoutInfo)
+
         self.buttongroup = QButtonGroup()
         self.buttongroup.setExclusive(False)
         self.buttongroup_momentary = QButtonGroup()
@@ -59,6 +88,178 @@ class LocalButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
         vbox.addWidget(self.buttonBox)
         
         self.setLayout(vbox)
+
+    def guessMatrixLayout(self, num):
+        if num <= 1:
+            return (1, max(1, num))
+
+        best_rows = 1
+        best_cols = num
+        best_delta = best_cols - best_rows
+
+        limit = int(num ** 0.5)
+        for rows in range(1, limit + 1):
+            if num % rows == 0:
+                cols = num // rows
+                delta = abs(cols - rows)
+                if delta < best_delta:
+                    best_rows = rows
+                    best_cols = cols
+                    best_delta = delta
+
+        if best_rows == 1 and num > 8:
+            best_rows = int(num ** 0.5)
+            best_cols = (num + best_rows - 1) // best_rows
+
+        return (best_rows, best_cols)
+
+    def clearButtons(self):
+        while self.buttonBoxLayout.count():
+            item = self.buttonBoxLayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        for b in self.buttongroup.buttons():
+            self.buttongroup.removeButton(b)
+
+        for b in self.buttongroup_momentary.buttons():
+            self.buttongroup_momentary.removeButton(b)
+
+    def getVisibleNum(self):
+        if self.matrixViewBox.isChecked():
+            return max(1, self.rowsBox.value() * self.colsBox.value())
+        return max(0, self.num)
+
+    def updateLayoutInfo(self):
+        msg = f"Firmware buttons: {self.num}. Layout slots shown: {self.visible_num}."
+        if self.visible_num < self.num:
+            msg += " Hidden firmware buttons keep their previous values on Apply."
+        if not self.has_mode_cmd:
+            msg += " Firmware without dpin.mode: Matrix view changes only the UI layout."
+        self.layoutInfo.setText(msg)
+
+    def loadLayoutSettings(self):
+        default_rows, default_cols = self.guessMatrixLayout(self.num)
+
+        profile_ui = getattr(self.main, "profile_ui", None)
+        if profile_ui is None:
+            return (default_rows, default_cols)
+
+        rows = profile_ui.get_global_setting("dpin_matrix_rows", default_rows)
+        cols = profile_ui.get_global_setting("dpin_matrix_cols", default_cols)
+
+        try:
+            rows = int(rows)
+        except (TypeError, ValueError):
+            rows = default_rows
+        try:
+            cols = int(cols)
+        except (TypeError, ValueError):
+            cols = default_cols
+        rows = max(1, min(64, rows))
+        cols = max(1, min(64, cols))
+
+        return (rows, cols)
+
+    def saveLayoutSettings(self):
+        profile_ui = getattr(self.main, "profile_ui", None)
+        if profile_ui is None:
+            return
+
+        profile_ui.set_global_setting("dpin_matrix_rows", int(self.rowsBox.value()), save=False)
+        profile_ui.set_global_setting("dpin_matrix_cols", int(self.colsBox.value()), save=True)
+
+    def applyMasksToUi(self):
+        for i in range(self.visible_num):
+            btn = self.buttongroup.button(i)
+            if btn is not None:
+                btn.setChecked((self.btn_mask & (1 << i)) != 0)
+
+            btn_mom = self.buttongroup_momentary.button(i)
+            if btn_mom is not None:
+                btn_mom.setChecked((self.momentary_mask & (1 << i)) != 0)
+
+    def createLinearButtons(self):
+        self.buttonBoxLayout.addWidget(QLabel("Pins"),0,0)
+        self.buttonBoxLayout.addWidget(QLabel("Pulse mode"),0,1)
+        for i in range(self.visible_num):
+            cb = QCheckBox(str(i+1))
+            self.buttongroup.addButton(cb,i)
+
+            cb_mom = QCheckBox(str(i+1))
+            self.buttongroup_momentary.addButton(cb_mom,i)
+
+            self.buttonBoxLayout.addWidget(cb,i+1,0)
+            self.buttonBoxLayout.addWidget(cb_mom,i+1,1)
+
+    def createMatrixButtons(self):
+        self.buttonBoxLayout.addWidget(QLabel("Enabled"), 0, 1, 1, self.matrix_cols)
+        self.buttonBoxLayout.addWidget(QLabel("Pulse mode"), 0, self.matrix_cols + 2, 1, self.matrix_cols)
+
+        for row in range(self.matrix_rows):
+            self.buttonBoxLayout.addWidget(QLabel(f"R{row + 1}"), row + 1, 0)
+            self.buttonBoxLayout.addWidget(QLabel(f"R{row + 1}"), row + 1, self.matrix_cols + 1)
+            for col in range(self.matrix_cols):
+                idx = row * self.matrix_cols + col
+                if idx >= self.visible_num:
+                    continue
+
+                cb = QCheckBox(str(idx + 1))
+                self.buttongroup.addButton(cb, idx)
+                self.buttonBoxLayout.addWidget(cb, row + 1, col + 1)
+
+                cb_mom = QCheckBox(str(idx + 1))
+                self.buttongroup_momentary.addButton(cb_mom, idx)
+                self.buttonBoxLayout.addWidget(cb_mom, row + 1, self.matrix_cols + 2 + col)
+
+    def rebuildButtons(self):
+        self.clearButtons()
+        self.visible_num = self.getVisibleNum()
+        if not self.matrixViewBox.isChecked():
+            # In direct mode always mirror the exact firmware pin count.
+            self.visible_num = max(0, self.num)
+
+        if self.matrixViewBox.isChecked() and self.visible_num > 1:
+            self.createMatrixButtons()
+        else:
+            self.createLinearButtons()
+
+        self.applyMasksToUi()
+        self.updateLayoutInfo()
+        self.buttonBox.update()
+
+    def matrixLayoutChanged(self, _=None):
+        self.rowsBox.setEnabled(self.matrixViewBox.isChecked())
+        self.colsBox.setEnabled(self.matrixViewBox.isChecked())
+
+        if self.num <= 0:
+            return
+
+        self.matrix_rows = self.rowsBox.value()
+        self.matrix_cols = self.colsBox.value()
+        self.rebuildButtons()
+
+    def modeCb(self, mode):
+        self.has_mode_cmd = True
+        mode_enabled = bool(int(mode))
+        self.syncing_mode = True
+        self.matrixViewBox.blockSignals(True)
+        self.matrixViewBox.setChecked(mode_enabled)
+        self.matrixViewBox.blockSignals(False)
+        self.syncing_mode = False
+        self.matrixLayoutChanged()
+        self.updateLayoutInfo()
+
+    def matrixModeChanged(self, checked):
+        self.matrixLayoutChanged()
+        if self.syncing_mode:
+            return
+
+        # Only send dpin.mode when the firmware supports it.
+        if self.has_mode_cmd:
+            self.send_value("dpin","mode",1 if checked else 0)
+            self.get_value_async("dpin","pins",self.initButtons,0,conversion=int)
 
     # Tab is currently shown
     def showEvent(self,event):
@@ -79,8 +280,10 @@ class LocalButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
 
     def valueCb(self, val):
         j=0
-        for i in range(self.num):
+        for i in range(self.visible_num):
             btn = self.buttongroup.button(i)
+            if btn is None:
+                continue
             if self.btn_mask & (1<<i):
                 if val & (1<<j):
                     btn.setStyleSheet("background-color: yellow")
@@ -91,63 +294,64 @@ class LocalButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
                 btn.setStyleSheet("background-color: none")
             
     def initButtons(self,num):
-        #delete buttons
         self.num = num
+        self.matrix_rows, self.matrix_cols = self.loadLayoutSettings()
 
-        # Remove buttons
-        for i in range(self.buttonBoxLayout.count()):
-            b = self.buttonBoxLayout.takeAt(0)
-            self.buttonBoxLayout.removeItem(b)
-            b.widget().setParent(None)
-            #b.widget().deleteLater()
-        for b in self.buttongroup.buttons():
-            self.buttongroup.removeButton(b)
+        self.rowsBox.blockSignals(True)
+        self.colsBox.blockSignals(True)
+        self.rowsBox.setValue(self.matrix_rows)
+        self.colsBox.setValue(self.matrix_cols)
+        self.rowsBox.blockSignals(False)
+        self.colsBox.blockSignals(False)
 
-        for b in self.buttongroup_momentary.buttons():
-            self.buttongroup_momentary.removeButton(b)
-        
-        self.buttonBox.update()
-        self.buttonBoxLayout.addWidget(QLabel("Pins"),0,0)
-        self.buttonBoxLayout.addWidget(QLabel("Pulse mode"),0,1)
-        for i in range(self.num):
-            cb = QCheckBox(str(i+1))
-            self.buttongroup.addButton(cb,i)
-
-            cb_mom = QCheckBox(str(i+1))
-            self.buttongroup_momentary.addButton(cb_mom,i)
-
-            self.buttonBoxLayout.addWidget(cb,i+1,0)
-            self.buttonBoxLayout.addWidget(cb_mom,i+1,1)
+        self.matrixLayoutChanged()
 
         def localcb(mask):
             self.btn_mask = mask
-            for i in range(self.num):
-                self.buttongroup.button(i).setChecked(mask & (1 << i))
+            self.applyMasksToUi()
                 
         def localpulsemaskcb(mask):
-            self.btn_mask = mask
-            for i in range(self.num):
-                self.buttongroup_momentary.button(i).setChecked(mask & (1 << i))
+            self.momentary_mask = mask
+            self.applyMasksToUi()
 
         self.get_value_async("dpin","mask",localcb,0,conversion=int)
         self.get_value_async("dpin","pulse",localpulsemaskcb,0,conversion=int)
         
  
     def apply(self):
-        self.btn_mask = 0
-        for i in range(self.num):
-            if(self.buttongroup.button(i).isChecked()):
-                self.btn_mask |= 1 << i
-            if(self.buttongroup_momentary.button(i).isChecked()):
-                self.momentary_mask |= 1 << i
+        new_btn_mask = int(self.btn_mask)
+        new_momentary_mask = int(self.momentary_mask)
 
+        loop_count = self.visible_num if self.matrixViewBox.isChecked() else max(0, self.num)
+        for i in range(loop_count):
+            btn = self.buttongroup.button(i)
+            if btn is not None and btn.isChecked():
+                new_btn_mask |= 1 << i
+            else:
+                new_btn_mask &= ~(1 << i)
+
+            btn_mom = self.buttongroup_momentary.button(i)
+            if btn_mom is not None and btn_mom.isChecked():
+                new_momentary_mask |= 1 << i
+            else:
+                new_momentary_mask &= ~(1 << i)
+
+        self.btn_mask = new_btn_mask
+        self.momentary_mask = new_momentary_mask
+
+        if self.has_mode_cmd:
+            self.send_value("dpin","mode",(1 if self.matrixViewBox.isChecked() else 0))
         self.send_value("dpin","mask",self.btn_mask)
         self.send_value("dpin","pulse",self.momentary_mask)
         self.send_value("dpin","polarity",(1 if self.polBox.isChecked() else 0))
+        self.saveLayoutSettings()
     
     def readValues(self):
+        self.has_mode_cmd = False
         self.get_value_async("dpin","pins",self.initButtons,0,conversion=int)
+        self.get_value_async("dpin","mode",self.modeCb,0,conversion=int)
         self.get_value_async("dpin","polarity",self.polBox.setChecked,0,conversion=int)
+        self.updateLayoutInfo()
  
 
 class SPIButtonsConf(OptionsDialogGroupBox,CommunicationHandler):
